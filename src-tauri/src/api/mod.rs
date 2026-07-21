@@ -72,7 +72,13 @@ impl ApiClient {
 
     /// Discovery по домену: `https://<domain>/v1/discovery` → base_url.
     pub async fn discover(&self, domain: &str) -> AppResult<DiscoveryDto> {
-        let url = format!("https://{}/v1/discovery", domain.trim_matches('/'));
+        // Принимаем и голый "host:port", и полный "https://host:port/" — нормализуем.
+        let host = domain
+            .trim()
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .trim_matches('/');
+        let url = format!("https://{host}/v1/discovery");
         let dto: DiscoveryDto = self.http.get(&url).send().await?.error_for_status()?.json().await?;
         {
             let mut s = self.state.write().await;

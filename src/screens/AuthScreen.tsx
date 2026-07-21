@@ -6,7 +6,8 @@ import { InfinityColors as C, InfinityGradients as G } from "../theme/colors";
 /** Экран входа (фирменный стиль): discovery по домену → логин → Home. */
 export default function AuthScreen() {
   const { setRoute, setError, error } = useAppStore();
-  const [domain, setDomain] = useState("");
+  // Домен по умолчанию (можно поменять). Discovery узнаёт остальное с сервера.
+  const [domain, setDomain] = useState("bot.infinityconnect.ru:8443");
   const [loginValue, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
