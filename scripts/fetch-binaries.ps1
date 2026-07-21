@@ -4,11 +4,13 @@
 
 $ErrorActionPreference = "Stop"
 
-$XrayVersion = "26.3.27"  # = Android BuildFlags.XRAY_CORE_VERSION
+$XrayVersion = "26.3.27"       # = Android BuildFlags.XRAY_CORE_VERSION
+$HysteriaVersion = "2.10.0"    # apernet/hysteria 2.x
 $BinDir = Join-Path $PSScriptRoot "..\src-tauri\binaries"
 $BinDir = [System.IO.Path]::GetFullPath($BinDir)
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
 
+# --- Xray (zip: xray.exe + wintun.dll + geo) ---
 $Url = "https://github.com/XTLS/Xray-core/releases/download/v$XrayVersion/Xray-windows-64.zip"
 $Zip = Join-Path $env:TEMP "xray-$XrayVersion.zip"
 $Extract = Join-Path $env:TEMP "xray-$XrayVersion"
@@ -24,7 +26,13 @@ foreach ($f in @("xray.exe", "wintun.dll", "geoip.dat", "geosite.dat")) {
     Copy-Item -Path (Join-Path $Extract $f) -Destination (Join-Path $BinDir $f) -Force
     Write-Host "  → $f"
 }
-
 Remove-Item $Zip -Force
 Remove-Item -Recurse -Force $Extract
+
+# --- Hysteria2 (одиночный exe) ---
+$HyUrl = "https://github.com/apernet/hysteria/releases/download/app/v$HysteriaVersion/hysteria-windows-amd64.exe"
+Write-Host "Скачиваю Hysteria $HysteriaVersion..."
+Invoke-WebRequest -Uri $HyUrl -OutFile (Join-Path $BinDir "hysteria.exe")
+Write-Host "  → hysteria.exe"
+
 Write-Host "Готово: $BinDir"

@@ -7,6 +7,8 @@
 //!
 //! Сборка Xray-JSON из этой модели — `engine/xray_config.rs`.
 
+pub mod hysteria2_config;
+pub mod selector;
 pub mod xray_config;
 
 use serde::Serialize;

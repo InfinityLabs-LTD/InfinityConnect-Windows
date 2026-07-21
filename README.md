@@ -44,8 +44,11 @@ npm run tauri build         # NSIS + MSI установщики в src-tauri/tar
 ## Статус
 
 - **Фаза 0 — каркас.** ✅ Окно, трей, автозапуск, мост invoke/emit (`ping`).
-- **Фаза 1 — аккаунт и подписки.** ✅ Логин, discovery, ключи, список серверов
-  подписки (стиль Happ), HWID (MachineGuid), токены (DPAPI), офлайн-кэши.
-- **Далее — Фаза 2 (MVP-туннель):** wintun + engine (Xray JSON) + sidecar xray.exe.
+- **Фаза 1 — аккаунт и подписки.** ✅ Логин, discovery, ключи, список серверов,
+  HWID (MachineGuid), токены (DPAPI), офлайн-кэши.
+- **Фаза 2 — MVP-туннель.** ✅ wintun + Xray JSON + sidecar xray.exe, connect/disconnect,
+  статистика, admin-элевация.
+- **Фаза 3 — Hysteria2 + RawXray.** ✅ hysteria.exe sidecar, выбор ядра, паритет протоколов.
+- **Далее — Фаза 4 (UI-паритет):** экраны Home/Auth/Profile/Settings, тема, трей, автозапуск.
 
 См. [ARCHITECTURE.md](ARCHITECTURE.md).

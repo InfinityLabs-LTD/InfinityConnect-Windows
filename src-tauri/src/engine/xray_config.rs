@@ -10,7 +10,7 @@
 
 use serde_json::{json, Value};
 
-use super::{EngineConfig, RawXrayConfig, Security, Transport, VlessConfig};
+use super::{RawXrayConfig, Security, Transport, VlessConfig};
 
 /// Имя wintun-адаптера, создаваемого ядром.
 pub const TUN_NAME: &str = "InfinityTun";
@@ -223,16 +223,6 @@ fn stream_settings(config: &VlessConfig) -> Value {
     }
 
     ss
-}
-
-/// Диспетчер: строит конфиг под вариант EngineConfig (VLESS/RawXray).
-/// Hysteria2 идёт в своё ядро (Фаза 3) — здесь `None`.
-pub fn build(config: &EngineConfig, mtu: u32) -> Option<String> {
-    match config {
-        EngineConfig::Vless(v) => Some(build_vless(v, mtu)),
-        EngineConfig::RawXray(r) => Some(build_raw(r, mtu)),
-        EngineConfig::Hysteria2(_) => None,
-    }
 }
 
 #[cfg(test)]

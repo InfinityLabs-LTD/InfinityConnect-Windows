@@ -10,8 +10,8 @@ use tauri::{AppHandle, State};
 use crate::api::dto::{DiscoveryDto, KeyDto, UserInfoDto};
 use crate::api::ApiClient;
 use crate::connection::build_connection;
-use crate::engine::{xray_config, EngineConfig};
-use crate::error::{AppError, AppResult};
+use crate::engine::{selector, xray_config};
+use crate::error::AppResult;
 use crate::subscription;
 use crate::tunnel::TunnelManager;
 
@@ -123,17 +123,9 @@ pub async fn connect(
     tunnel: State<'_, TunnelManager>,
 ) -> AppResult<()> {
     let config = build_connection(&api, key_id, server_index).await?;
-    let remark = config.remark().to_string();
-
-    // Hysteria2 — отдельное ядро (Фаза 3), пока не поддержано.
-    if matches!(config, EngineConfig::Hysteria2(_)) {
-        return Err(AppError::Other("Hysteria2 будет поддержан на Фазе 3".into()));
-    }
-
-    let json = xray_config::build(&config, xray_config::DEFAULT_MTU)
-        .ok_or_else(|| AppError::Other("не удалось построить конфиг ядра".into()))?;
-
-    tunnel.connect(app, json, remark).await
+    // Выбор ядра по профилю: Vless/RawXray → Xray, Hysteria2 → Hysteria.
+    let plan = selector::select(&config, xray_config::DEFAULT_MTU);
+    tunnel.connect(app, plan).await
 }
 
 /// Отключение туннеля.
