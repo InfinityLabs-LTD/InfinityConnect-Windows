@@ -1,0 +1,2 @@
+# Сюда кладутся sidecar-бинарники: xray.exe, hysteria.exe, wintun.dll
+# (bundled ресурсы, Фаза 2+). Версии — синхронно с Android BuildFlags.

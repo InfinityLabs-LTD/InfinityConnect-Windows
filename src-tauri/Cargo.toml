@@ -1,0 +1,24 @@
+[package]
+name = "infinity-connect"
+version = "0.1.0"
+description = "InfinityConnect — Windows VPN client"
+authors = ["Infinity Labs"]
+edition = "2021"
+
+# Библиотека для мобильной/десктоп-обвязки Tauri + бинарь.
+[lib]
+name = "infinity_connect_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# по умолчанию — прод-профиль без кастом-протокола.
+custom-protocol = ["tauri/custom-protocol"]

@@ -1,0 +1,24 @@
+# --- Node / frontend ---
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# --- Rust / Tauri ---
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# --- Sidecar-бинарники (кладутся при сборке, не версионируем) ---
+src-tauri/binaries/*.exe
+src-tauri/binaries/*.dll
+
+# --- IDE / OS ---
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Исходная иконка (генерируется в icons/) ---
+app-icon.png
