@@ -5,7 +5,9 @@
 //! JSON-конфиги панели в один из вариантов ниже. Движок выбирается по варианту:
 //! Vless/RawXray → Xray, Hysteria2 → Hysteria2.
 //!
-//! Сборка Xray-JSON из этой модели — Фаза 2 (`engine/xray_config.rs`).
+//! Сборка Xray-JSON из этой модели — `engine/xray_config.rs`.
+
+pub mod xray_config;
 
 use serde::Serialize;
 use serde_json::Value;

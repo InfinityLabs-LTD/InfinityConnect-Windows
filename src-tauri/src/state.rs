@@ -1,41 +1,48 @@
 //! Единый источник состояния туннеля для UI (аналог Android VpnStateHolder).
-//! Состояние эмитится во фронт через Tauri-события `tunnel://state`; фронт
-//! слушает их (см. `src/api/commands.ts`). На Фазе 0 — только типы и эмит
-//! стартового `disconnected`.
+//! Состояние и статистика эмитятся во фронт через Tauri-события; фронт слушает
+//! их (см. `src/api/commands.ts`).
 
 use serde::Serialize;
+use serde_json::json;
 use tauri::{AppHandle, Emitter};
 
-/// Событие состояния туннеля (зеркало TunnelStateEvent на фронте).
-// Фаза 0: варианты Connecting/Connected/Error ещё не эмитятся (нет туннеля) —
-// появятся на Фазе 2. Заглушаем dead_code, чтобы каркас собирался без warning.
-#[allow(dead_code)]
+/// Состояние туннеля (зеркало TunnelStateEvent на фронте).
 #[derive(Clone, Serialize)]
-#[serde(rename_all = "lowercase", tag = "status", content = "message")]
 pub enum TunnelState {
     Disconnected,
     Connecting,
-    Connected,
+    /// Подключено к серверу (remark — для отображения).
+    Connected(String),
     Error(String),
 }
 
-/// Имя канала событий, на который подписан фронт.
+/// Канал событий состояния туннеля.
 pub const TUNNEL_STATE_EVENT: &str = "tunnel://state";
+/// Канал событий статистики трафика.
+pub const TUNNEL_STATS_EVENT: &str = "tunnel://stats";
 
 /// Эмитит текущее состояние туннеля во фронт.
 pub fn emit_state(app: &AppHandle, state: TunnelState) {
-    // Ошибку эмита логируем, но не роняем приложение.
-    if let Err(e) = app.emit(TUNNEL_STATE_EVENT, wire(state)) {
+    let payload = match state {
+        TunnelState::Disconnected => json!({"status": "disconnected"}),
+        TunnelState::Connecting => json!({"status": "connecting"}),
+        TunnelState::Connected(remark) => json!({"status": "connected", "message": remark}),
+        TunnelState::Error(m) => json!({"status": "error", "message": m}),
+    };
+    if let Err(e) = app.emit(TUNNEL_STATE_EVENT, payload) {
         eprintln!("emit tunnel state failed: {e}");
     }
 }
 
-/// Приводит enum к форме {status, message?}, которую ждёт фронт.
-fn wire(state: TunnelState) -> serde_json::Value {
-    match state {
-        TunnelState::Disconnected => serde_json::json!({ "status": "disconnected" }),
-        TunnelState::Connecting => serde_json::json!({ "status": "connecting" }),
-        TunnelState::Connected => serde_json::json!({ "status": "connected" }),
-        TunnelState::Error(m) => serde_json::json!({ "status": "error", "message": m }),
+/// Эмитит статистику трафика: суммарные байты + мгновенная скорость (байт/с).
+pub fn emit_stats(app: &AppHandle, up_bytes: u64, down_bytes: u64, up_speed: u64, down_speed: u64) {
+    let payload = json!({
+        "upBytes": up_bytes,
+        "downBytes": down_bytes,
+        "upSpeed": up_speed,
+        "downSpeed": down_speed,
+    });
+    if let Err(e) = app.emit(TUNNEL_STATS_EVENT, payload) {
+        eprintln!("emit tunnel stats failed: {e}");
     }
 }

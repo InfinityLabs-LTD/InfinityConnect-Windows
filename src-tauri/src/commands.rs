@@ -5,12 +5,15 @@
 //! ошибка сериализуется во фронт как `{kind, message}`.
 
 use serde::Serialize;
-use tauri::State;
+use tauri::{AppHandle, State};
 
 use crate::api::dto::{DiscoveryDto, KeyDto, UserInfoDto};
 use crate::api::ApiClient;
-use crate::error::AppResult;
+use crate::connection::build_connection;
+use crate::engine::{xray_config, EngineConfig};
+use crate::error::{AppError, AppResult};
 use crate::subscription;
+use crate::tunnel::TunnelManager;
 
 /// Тестовая команда Фазы 0: подтверждает мост invoke end-to-end.
 #[tauri::command]
@@ -106,4 +109,42 @@ pub async fn key_servers(key_id: i64, api: State<'_, ApiClient>) -> AppResult<Ve
             protocol: "VLESS".into(),
         })
         .collect())
+}
+
+/// Подключение к серверу ключа по индексу (Фаза 2: только VLESS/RawXray → Xray).
+/// Строит EngineConfig (подписка → fallback /v1/config), генерирует Xray JSON,
+/// поднимает туннель. Состояние/статистика идут событиями.
+#[tauri::command]
+pub async fn connect(
+    key_id: i64,
+    server_index: usize,
+    app: AppHandle,
+    api: State<'_, ApiClient>,
+    tunnel: State<'_, TunnelManager>,
+) -> AppResult<()> {
+    let config = build_connection(&api, key_id, server_index).await?;
+    let remark = config.remark().to_string();
+
+    // Hysteria2 — отдельное ядро (Фаза 3), пока не поддержано.
+    if matches!(config, EngineConfig::Hysteria2(_)) {
+        return Err(AppError::Other("Hysteria2 будет поддержан на Фазе 3".into()));
+    }
+
+    let json = xray_config::build(&config, xray_config::DEFAULT_MTU)
+        .ok_or_else(|| AppError::Other("не удалось построить конфиг ядра".into()))?;
+
+    tunnel.connect(app, json, remark).await
+}
+
+/// Отключение туннеля.
+#[tauri::command]
+pub async fn disconnect(app: AppHandle, tunnel: State<'_, TunnelManager>) -> AppResult<()> {
+    tunnel.disconnect(&app).await;
+    Ok(())
+}
+
+/// Текущий статус туннеля (подключён ли) — для восстановления UI.
+#[tauri::command]
+pub async fn tunnel_status(tunnel: State<'_, TunnelManager>) -> AppResult<bool> {
+    Ok(tunnel.is_connected().await)
 }

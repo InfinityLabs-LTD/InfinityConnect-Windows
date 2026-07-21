@@ -14,6 +14,14 @@ export interface TunnelStateEvent {
   message?: string;
 }
 
+/** Событие статистики трафика (байты суммарно + скорость байт/с). */
+export interface TunnelStatsEvent {
+  upBytes: number;
+  downBytes: number;
+  upSpeed: number;
+  downSpeed: number;
+}
+
 /** Ошибка бэкенда (AppError): {kind, message}. */
 export interface AppError {
   kind: "Network" | "Unauthorized" | "Parse" | "Storage" | "Other";
@@ -80,9 +88,23 @@ export const keys = () => invoke<Key[]>("keys");
 export const keyServers = (keyId: number) =>
   invoke<SubscriptionServer[]>("key_servers", { keyId });
 
+export const connect = (keyId: number, serverIndex: number) =>
+  invoke<void>("connect", { keyId, serverIndex });
+
+export const disconnect = () => invoke<void>("disconnect");
+
+export const tunnelStatus = () => invoke<boolean>("tunnel_status");
+
 /** Подписка на события состояния туннеля от бэкенда. */
 export async function onTunnelState(
   handler: (state: TunnelStateEvent) => void,
 ): Promise<UnlistenFn> {
   return listen<TunnelStateEvent>("tunnel://state", (e) => handler(e.payload));
+}
+
+/** Подписка на события статистики трафика. */
+export async function onTunnelStats(
+  handler: (stats: TunnelStatsEvent) => void,
+): Promise<UnlistenFn> {
+  return listen<TunnelStatsEvent>("tunnel://stats", (e) => handler(e.payload));
 }

@@ -9,9 +9,10 @@ dist-ssr/
 src-tauri/target/
 src-tauri/gen/schemas/
 
-# --- Sidecar-бинарники (кладутся при сборке, не версионируем) ---
+# --- Sidecar-бинарники и geo-данные (кладутся при сборке, не версионируем) ---
 src-tauri/binaries/*.exe
 src-tauri/binaries/*.dll
+src-tauri/binaries/*.dat
 
 # --- IDE / OS ---
 .vscode/*

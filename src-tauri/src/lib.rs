@@ -7,12 +7,18 @@
 
 mod api;
 mod commands;
+mod connection;
 mod device;
+mod elevation;
 mod engine;
 mod error;
+mod sidecar;
 mod state;
 mod store;
 mod subscription;
+mod tunnel;
+
+pub use elevation::{is_elevated, relaunch_elevated};
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -23,6 +29,7 @@ use tauri_plugin_autostart::MacosLauncher;
 
 use crate::api::ApiClient;
 use crate::state::{emit_state, TunnelState};
+use crate::tunnel::TunnelManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -36,6 +43,12 @@ pub fn run() {
         .manage(ApiClient::new())
         .setup(|app| {
             build_tray(app.handle())?;
+
+            // Каталог с xray.exe/wintun.dll/geo-файлами (bundled resources).
+            // В dev — src-tauri/binaries; в проде — resource_dir/binaries.
+            let bin_dir = resolve_binaries_dir(app.handle());
+            app.manage(TunnelManager::new(bin_dir));
+
             // Эмитим стартовое состояние туннеля — мост emit end-to-end.
             emit_state(app.handle(), TunnelState::Disconnected);
             Ok(())
@@ -49,9 +62,26 @@ pub fn run() {
             commands::user_info,
             commands::keys,
             commands::key_servers,
+            commands::connect,
+            commands::disconnect,
+            commands::tunnel_status,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска InfinityConnect");
+}
+
+/// Каталог с ядром и wintun.dll. В проде — рядом с ресурсами приложения; в dev —
+/// `src-tauri/binaries`. Ядро само ищет wintun.dll в своём cwd (мы ставим cwd в этот каталог).
+fn resolve_binaries_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
+    // Прод: ресурсы бандла (resources: ["binaries/*"]).
+    if let Ok(res) = app.path().resource_dir() {
+        let candidate = res.join("binaries");
+        if candidate.join("xray.exe").exists() {
+            return candidate;
+        }
+    }
+    // Dev-фолбэк: каталог исходников.
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries")
 }
 
 /// Системный трей: статус + пункты «Показать» и «Выход».

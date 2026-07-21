@@ -50,11 +50,13 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
 | `error.rs` | `AppError`/`AppResult` (аналог Android AppResult), сериализуется во фронт. | ✅ Фаза 1 |
 | `api/` | reqwest-клиент: discovery→base_url, login/refresh (Bearer, авто-refresh 401), keys/config/user, тело подписки (HWID-заголовки), офлайн-фолбэк на кэш. `dto.rs` — все DTO. | ✅ Фаза 1 |
 | `subscription/` | Парсер тела (JSON-конфиги панели/base64/URI) + `vless_uri`/`hysteria2_uri`/`uri`. RawXray для сложных, XHTTP extra без интерпретации. | ✅ Фаза 1 |
-| `engine/` | Модель профиля `EngineConfig` (Vless/RawXray/Hysteria2, Transport, Security). Сборка Xray JSON — Фаза 2. | 🟡 модель ✅, JSON ⬜ |
+| `engine/` | Модель `EngineConfig` + `xray_config.rs` — генерация Xray JSON (tun-инбаунд через wintun + stats API + build/buildRaw/proxy_ping). Юнит-тесты формы. | ✅ Фаза 2 |
+| `connection.rs` | BuildConnection: ключ+индекс → EngineConfig (подписка → fallback /v1/config). | ✅ Фаза 2 |
 | `store/` | Токены (DPAPI: `dpapi.rs`) + офлайн-кэши discovery/ключей/тел подписок на %APPDATA%. | ✅ Фаза 1 |
 | `device.rs` | HWID (MachineGuid из реестра, UPPER) + метаданные ОС для заголовков. | ✅ Фаза 1 |
-| `tunnel/` | wintun-адаптер, маршруты ОС, оркестратор туннеля, kill-switch, смена сети. | ⬜ Фаза 2/7 |
-| `sidecar/` | Запуск/менеджмент xray.exe / hysteria.exe, чтение stats. | ⬜ Фаза 2/3 |
+| `elevation.rs` | Проверка admin + само-relaunch через UAC (wintun/маршруты требуют admin). | ✅ Фаза 2 |
+| `tunnel/` | Оркестратор connect/disconnect: старт ядра → ожидание wintun → маршруты ОС (`routes.rs`) → фоновый опрос статистики. kill-switch/смена сети — Фаза 7. | 🟡 Фаза 2 (MVP) |
+| `sidecar/` | Запуск/менеджмент xray.exe (std::process) + чтение stats через `xray api statsquery`. hysteria.exe — Фаза 3. | 🟡 Фаза 2 (Xray) |
 | `ping/` | 4 метода пинга (proxy через SOCKS-inbound, TCP, ICMP) + режимы + таймаут. | ⬜ Фаза 5 |
 | `routing/` | Split-tunnel (WFP) + домены (Xray routing.rules). | ⬜ Фаза 6 |
 
@@ -94,7 +96,10 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
 - **Фаза 1 — Аккаунт и подписки.** ✅ `api/` + `subscription/` + `engine/` (модель) + `store/` +
   `device.rs`. Логин, discovery, ключи, список серверов подписки, HWID, токены (DPAPI),
   офлайн-кэши. Экраны Auth/Home.
-- **Фаза 2 — MVP-туннель.** `wintun` + `engine/` (Xray JSON) + `sidecar/` xray.exe; один VLESS.
+- **Фаза 2 — MVP-туннель.** ✅ `engine/xray_config` (Xray JSON, tun через wintun) + `sidecar/`
+  xray.exe + `tunnel/` (маршруты ОС, статистика) + `connection.rs` + admin-элевация. connect/
+  disconnect VLESS/RawXray, hero-кнопка, тикающая статистика. Ядро xray.exe 26.3.27 (не в git —
+  `scripts/fetch-binaries.ps1`). Проверено: xray -test принимает генерируемый JSON.
 - **Фаза 3 — Hysteria2 + RawXray.** hysteria.exe sidecar; проброс автовыбора целиком.
 - **Фаза 4 — UI-паритет.** Home/Auth/Profile/Settings, фиолетовая тема, трей, автозапуск.
 - **Фаза 5 — Пинг.** 4 метода + режимы + таймаут через временный SOCKS-inbound sidecar.

@@ -1,20 +1,21 @@
 import { useEffect, useState } from "react";
-import { isAuthorized, onTunnelState } from "./api/commands";
+import { isAuthorized, onTunnelState, onTunnelStats } from "./api/commands";
 import { useAppStore } from "./state/appStore";
 import { InfinityColors as C } from "./theme/colors";
 import AuthScreen from "./screens/AuthScreen";
 import HomeScreen from "./screens/HomeScreen";
 
 /**
- * Корень приложения (Фаза 1): восстановление сессии → роутинг Auth/Home.
- * Подписка на события состояния туннеля живёт здесь (зеркало VpnStateHolder).
+ * Корень приложения: восстановление сессии → роутинг Auth/Home.
+ * Подписки на события туннеля/статистики живут здесь (зеркало VpnStateHolder).
  */
 export default function App() {
-  const { route, setRoute, setTunnel } = useAppStore();
+  const { route, setRoute, setTunnel, setStats } = useAppStore();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const unlisten = onTunnelState(setTunnel);
+    const unlistenState = onTunnelState(setTunnel);
+    const unlistenStats = onTunnelStats(setStats);
     (async () => {
       try {
         if (await isAuthorized()) setRoute("home");
@@ -25,9 +26,10 @@ export default function App() {
       }
     })();
     return () => {
-      unlisten.then((u) => u());
+      unlistenState.then((u) => u());
+      unlistenStats.then((u) => u());
     };
-  }, [setRoute, setTunnel]);
+  }, [setRoute, setTunnel, setStats]);
 
   if (!ready) {
     return (

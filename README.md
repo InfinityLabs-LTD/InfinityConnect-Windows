@@ -24,9 +24,13 @@ React + TypeScript). Самостоятельный проект; Android-вер
 ## Разработка
 
 ```powershell
-npm install                 # зависимости фронта
-npm run tauri dev           # запуск дев-сборки (Vite + cargo)
+npm install                                              # зависимости фронта
+powershell -ExecutionPolicy Bypass -File scripts/fetch-binaries.ps1  # xray.exe/wintun.dll/geo (не в git)
+npm run tauri dev                                        # запуск дев-сборки (Vite + cargo)
 ```
+
+> Приложение требует прав администратора (создание wintun-адаптера и правка
+> маршрутов). При запуске без них — само перезапустится через UAC.
 
 ## Сборка релиза
 
