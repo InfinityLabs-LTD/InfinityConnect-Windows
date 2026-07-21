@@ -27,15 +27,16 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
 | Файл | За что отвечает | Статус |
 |---|---|---|
 | `main.tsx` | Точка входа React. | ✅ Фаза 0 |
-| `App.tsx` | Роутер Auth/Home + восстановление сессии (is_authorized) + подписка на `tunnel://state`. | ✅ Фаза 1 |
-| `api/commands.ts` | Типы и вызовы всех Tauri-команд (invoke) + listen. Единственная точка общения с бэком. | ✅ Фаза 1 |
-| `state/appStore.ts` | Zustand-стор: route, ключи, серверы, состояние туннеля (зеркало VpnStateHolder). | ✅ Фаза 1 |
-| `screens/AuthScreen.tsx` | Вход: discovery по домену + логин. | ✅ Фаза 1 |
-| `screens/HomeScreen.tsx` | Список ключей и серверов подписки (стиль Happ, раскрыт). Connect/пинг — Фазы 2/5. | 🟡 Фаза 1 |
-| `theme/colors.ts` | Палитра InfinityColors (фиолетовая) + `pingColor()` (по качеству, не по методу). | ⏳ значения-плейсхолдеры |
-| `styles.css` | Глобальные стили. | ✅ |
-| `screens/` (Profile/Settings) | Profile / Settings(Routing/Ping/About). | ⬜ Фаза 4 |
-| `components/` | Переиспользуемые виджеты (стиль Happ). | ⬜ Фаза 4 |
+| `App.tsx` | Роутер всех экранов + восстановление сессии/статуса туннеля + подписки на `tunnel://state`/`tunnel://stats`. | ✅ Фаза 4 |
+| `api/commands.ts` | Типы и вызовы всех Tauri-команд (invoke) + listen. Единственная точка общения с бэком. | ✅ |
+| `state/appStore.ts` | Zustand-стор: route (7 маршрутов), ключи, серверы, выбор, туннель, статистика. | ✅ Фаза 4 |
+| `screens/AuthScreen.tsx` | Вход: discovery + логин, фирменный стиль. | ✅ Фаза 4 |
+| `screens/HomeScreen.tsx` | Hero (ConnectHero) + панель статистики + аккордеон Happ (KeyCard/ServerRow, бейдж «⚡ Быстрейший»). | ✅ Фаза 4 |
+| `screens/ProfileScreen.tsx` | Аккаунт, подписка, разлогин. | ✅ Фаза 4 |
+| `screens/SettingsScreens.tsx` | Хаб → Маршрутизация (Фаза 6) / Пинг (Фаза 5) / О приложении (версии ядер + автозапуск). | 🟡 Фаза 4 |
+| `components/` | `ui.tsx` (GlassCard/StatusPill/EmojiBadge/Chip/Eyebrow), `ConnectHero.tsx` (SVG-свечение/кольцо/пульс), `Scaffold.tsx`. | ✅ Фаза 4 |
+| `theme/colors.ts` | Точная палитра InfinityColors (перенос из Android) + градиенты + `pingColor()` (по качеству). | ✅ Фаза 4 |
+| `util/format.ts` | Форматтеры байт/скорости. | ✅ |
 
 ---
 
@@ -104,7 +105,9 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
   `hysteria2_config` + `selector` (Vless/RawXray→Xray, Hy2→Hysteria), trait `CoreProcess`.
   RawXray-проброс готов с Фазы 2 (`build_raw`). Паритет по протоколам. Hy2 2.10.0.
   Проверено: hysteria -c принимает генерируемый JSON.
-- **Фаза 4 — UI-паритет.** Home/Auth/Profile/Settings, фиолетовая тема, трей, автозапуск.
+- **Фаза 4 — UI-паритет.** ✅ Home (hero + аккордеон Happ + бейдж «⚡ Быстрейший») / Auth /
+  Profile / Settings (хаб). Точная палитра InfinityColors + градиенты. Трей (показать/отключить/
+  выход, клик по иконке, сворачивание при закрытии). Автозапуск (команды + переключатель в About).
 - **Фаза 5 — Пинг.** 4 метода + режимы + таймаут через временный SOCKS-inbound sidecar.
 - **Фаза 6 — Маршрутизация.** По сайтам (routing.rules) + по приложениям (WFP).
 - **Фаза 7 — Офлайн-кэш + kill-switch + установщик + элевация.**

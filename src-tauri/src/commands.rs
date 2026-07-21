@@ -140,3 +140,21 @@ pub async fn disconnect(app: AppHandle, tunnel: State<'_, TunnelManager>) -> App
 pub async fn tunnel_status(tunnel: State<'_, TunnelManager>) -> AppResult<bool> {
     Ok(tunnel.is_connected().await)
 }
+
+/// Включён ли автозапуск с ОС.
+#[tauri::command]
+pub fn is_autostart_enabled(app: AppHandle) -> AppResult<bool> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch()
+        .is_enabled()
+        .map_err(|e| crate::error::AppError::Other(format!("автозапуск: {e}")))
+}
+
+/// Включает/выключает автозапуск с ОС.
+#[tauri::command]
+pub fn set_autostart(enabled: bool, app: AppHandle) -> AppResult<()> {
+    use tauri_plugin_autostart::ManagerExt;
+    let mgr = app.autolaunch();
+    let res = if enabled { mgr.enable() } else { mgr.disable() };
+    res.map_err(|e| crate::error::AppError::Other(format!("автозапуск: {e}")))
+}

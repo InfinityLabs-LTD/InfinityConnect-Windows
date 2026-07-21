@@ -49,6 +49,8 @@ npm run tauri build         # NSIS + MSI установщики в src-tauri/tar
 - **Фаза 2 — MVP-туннель.** ✅ wintun + Xray JSON + sidecar xray.exe, connect/disconnect,
   статистика, admin-элевация.
 - **Фаза 3 — Hysteria2 + RawXray.** ✅ hysteria.exe sidecar, выбор ядра, паритет протоколов.
-- **Далее — Фаза 4 (UI-паритет):** экраны Home/Auth/Profile/Settings, тема, трей, автозапуск.
+- **Фаза 4 — UI-паритет.** ✅ Экраны Home (hero + аккордеон Happ) / Auth / Profile / Settings
+  (хаб → Маршрутизация / Пинг / О приложении), фиолетовая тема, трей, автозапуск.
+- **Далее — Фаза 5 (Пинг):** 4 метода + режимы + таймаут через временный SOCKS-inbound sidecar.
 
 См. [ARCHITECTURE.md](ARCHITECTURE.md).

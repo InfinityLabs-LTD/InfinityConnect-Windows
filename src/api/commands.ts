@@ -95,6 +95,11 @@ export const disconnect = () => invoke<void>("disconnect");
 
 export const tunnelStatus = () => invoke<boolean>("tunnel_status");
 
+export const isAutostartEnabled = () => invoke<boolean>("is_autostart_enabled");
+
+export const setAutostart = (enabled: boolean) =>
+  invoke<void>("set_autostart", { enabled });
+
 /** Подписка на события состояния туннеля от бэкенда. */
 export async function onTunnelState(
   handler: (state: TunnelStateEvent) => void,

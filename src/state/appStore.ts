@@ -10,7 +10,14 @@ import type {
   TunnelStatsEvent,
 } from "../api/commands";
 
-type Route = "auth" | "home";
+type Route =
+  | "auth"
+  | "home"
+  | "profile"
+  | "settings"
+  | "settings/routing"
+  | "settings/ping"
+  | "settings/about";
 
 /** Выбранный сервер (ключ + индекс в подписке). */
 export interface Selection {

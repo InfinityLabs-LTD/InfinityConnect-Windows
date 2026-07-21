@@ -1,13 +1,15 @@
 import { useEffect, useState } from "react";
-import { isAuthorized, onTunnelState, onTunnelStats } from "./api/commands";
+import { isAuthorized, onTunnelState, onTunnelStats, tunnelStatus } from "./api/commands";
 import { useAppStore } from "./state/appStore";
-import { InfinityColors as C } from "./theme/colors";
+import { InfinityColors as C, InfinityGradients as G } from "./theme/colors";
 import AuthScreen from "./screens/AuthScreen";
 import HomeScreen from "./screens/HomeScreen";
+import ProfileScreen from "./screens/ProfileScreen";
+import { SettingsHub, RoutingScreen, PingScreen, AboutScreen } from "./screens/SettingsScreens";
 
 /**
- * Корень приложения: восстановление сессии → роутинг Auth/Home.
- * Подписки на события туннеля/статистики живут здесь (зеркало VpnStateHolder).
+ * Корень приложения: восстановление сессии → роутинг. Подписки на события
+ * туннеля/статистики живут здесь (зеркало VpnStateHolder).
  */
 export default function App() {
   const { route, setRoute, setTunnel, setStats } = useAppStore();
@@ -18,7 +20,11 @@ export default function App() {
     const unlistenStats = onTunnelStats(setStats);
     (async () => {
       try {
-        if (await isAuthorized()) setRoute("home");
+        if (await isAuthorized()) {
+          setRoute("home");
+          // Восстанавливаем состояние туннеля (мог остаться подключённым).
+          if (await tunnelStatus()) setTunnel({ status: "connected" });
+        }
       } catch {
         /* нет сессии — остаёмся на auth */
       } finally {
@@ -33,17 +39,19 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div style={splash}>
-        <span style={{ color: C.primaryLight }}>Infinity Connect…</span>
+      <div style={{ minHeight: "100vh", background: G.screen, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Segoe UI, system-ui, sans-serif" }}>
+        <span style={{ color: C.accentBlue }}>Infinity Connect…</span>
       </div>
     );
   }
 
-  return route === "home" ? <HomeScreen /> : <AuthScreen />;
+  switch (route) {
+    case "home": return <HomeScreen />;
+    case "profile": return <ProfileScreen />;
+    case "settings": return <SettingsHub />;
+    case "settings/routing": return <RoutingScreen />;
+    case "settings/ping": return <PingScreen />;
+    case "settings/about": return <AboutScreen />;
+    default: return <AuthScreen />;
+  }
 }
-
-const splash: React.CSSProperties = {
-  minHeight: "100vh", background: C.background,
-  display: "flex", alignItems: "center", justifyContent: "center",
-  fontFamily: "Segoe UI, system-ui, sans-serif",
-};

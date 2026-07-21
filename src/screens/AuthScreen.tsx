@@ -1,12 +1,9 @@
 import { useState } from "react";
 import { discover, login } from "../api/commands";
 import { useAppStore } from "../state/appStore";
-import { InfinityColors as C } from "../theme/colors";
+import { InfinityColors as C, InfinityGradients as G } from "../theme/colors";
 
-/**
- * Экран входа (Фаза 1). Discovery по домену → логин → переход на Home.
- * Домен по умолчанию можно поменять; сохранять его в настройках — Фаза 4.
- */
+/** Экран входа (фирменный стиль): discovery по домену → логин → Home. */
 export default function AuthScreen() {
   const { setRoute, setError, error } = useAppStore();
   const [domain, setDomain] = useState("");
@@ -29,45 +26,38 @@ export default function AuthScreen() {
   }
 
   return (
-    <div style={wrap}>
-      <h1 style={{ color: C.primaryLight, margin: 0 }}>Infinity Connect</h1>
-      <p style={{ color: C.textSecondary, marginTop: 4 }}>Вход в аккаунт</p>
+    <div style={{ minHeight: "100vh", background: G.screen, color: C.onSurface, fontFamily: FONT, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: 24 }}>
+      {/* Логотип-глиф */}
+      <div style={{ width: 72, height: 72, borderRadius: 20, background: G.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36, fontWeight: 800, color: "#fff", boxShadow: `0 10px 40px ${C.accentBlue}55` }}>
+        I
+      </div>
+      <h1 style={{ margin: 0, fontSize: 24, letterSpacing: -0.5 }}>Infinity Connect</h1>
+      <p style={{ color: C.muted, margin: 0, marginBottom: 8 }}>Вход в аккаунт</p>
 
-      <input style={input} placeholder="Домен (например vpn.example.com)"
-        value={domain} onChange={(e) => setDomain(e.currentTarget.value)} />
-      <input style={input} placeholder="Логин"
-        value={loginValue} onChange={(e) => setLogin(e.currentTarget.value)} />
-      <input style={input} type="password" placeholder="Пароль"
-        value={password} onChange={(e) => setPassword(e.currentTarget.value)} />
+      <Field placeholder="Домен (например vpn.example.com)" value={domain} onChange={setDomain} />
+      <Field placeholder="Логин" value={loginValue} onChange={setLogin} />
+      <Field placeholder="Пароль" value={password} onChange={setPassword} type="password" />
 
-      <button style={{ ...button, opacity: busy ? 0.6 : 1 }} disabled={busy} onClick={onSubmit}>
+      <button onClick={onSubmit} disabled={busy}
+        style={{ width: 320, padding: "12px 16px", borderRadius: 12, border: "none", background: G.accent, color: "#fff", fontWeight: 700, fontSize: 15, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1, marginTop: 4 }}>
         {busy ? "Вход…" : "Войти"}
       </button>
 
-      {error && <p style={{ color: C.error, margin: 0 }}>{error}</p>}
+      {error && <p style={{ color: C.coral, margin: 0, maxWidth: 320, textAlign: "center" }}>{error}</p>}
     </div>
   );
 }
 
-function errMessage(e: unknown): string {
-  if (e && typeof e === "object" && "message" in e) {
-    return String((e as { message?: string }).message ?? "Ошибка");
-  }
-  return String(e);
+function Field({ placeholder, value, onChange, type = "text" }: { placeholder: string; value: string; onChange: (v: string) => void; type?: string }) {
+  return (
+    <input placeholder={placeholder} value={value} type={type}
+      onChange={(e) => onChange(e.currentTarget.value)}
+      style={{ width: 320, padding: "12px 14px", borderRadius: 12, border: `1px solid ${C.stroke}`, background: C.surface, color: C.onSurface, outline: "none", fontSize: 14 }} />
+  );
 }
 
-const wrap: React.CSSProperties = {
-  minHeight: "100vh", background: C.background, color: C.textPrimary,
-  fontFamily: "Segoe UI, system-ui, sans-serif", display: "flex",
-  flexDirection: "column", alignItems: "center", justifyContent: "center",
-  gap: 12, padding: 24,
-};
-const input: React.CSSProperties = {
-  width: 300, padding: "10px 12px", borderRadius: 8,
-  border: `1px solid ${C.surfaceElevated}`, background: C.surface,
-  color: C.textPrimary, outline: "none",
-};
-const button: React.CSSProperties = {
-  width: 300, padding: "10px 16px", borderRadius: 8, border: "none",
-  background: C.primary, color: "#fff", cursor: "pointer", fontWeight: 600, marginTop: 4,
-};
+const FONT = "Segoe UI, system-ui, sans-serif";
+function errMessage(e: unknown): string {
+  if (e && typeof e === "object" && "message" in e) return String((e as { message?: string }).message ?? "Ошибка");
+  return String(e);
+}
