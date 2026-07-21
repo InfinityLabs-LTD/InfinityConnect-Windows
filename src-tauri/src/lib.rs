@@ -12,6 +12,7 @@ mod device;
 mod elevation;
 mod engine;
 mod error;
+mod ping;
 mod sidecar;
 mod state;
 mod store;
@@ -28,6 +29,7 @@ use tauri::{
 use tauri_plugin_autostart::MacosLauncher;
 
 use crate::api::ApiClient;
+use crate::ping::Pinger;
 use crate::state::{emit_state, TunnelState};
 use crate::tunnel::TunnelManager;
 
@@ -47,7 +49,8 @@ pub fn run() {
             // Каталог с xray.exe/wintun.dll/geo-файлами (bundled resources).
             // В dev — src-tauri/binaries; в проде — resource_dir/binaries.
             let bin_dir = resolve_binaries_dir(app.handle());
-            app.manage(TunnelManager::new(bin_dir));
+            app.manage(TunnelManager::new(bin_dir.clone()));
+            app.manage(Pinger::new(bin_dir));
 
             // Эмитим стартовое состояние туннеля — мост emit end-to-end.
             emit_state(app.handle(), TunnelState::Disconnected);
@@ -75,6 +78,9 @@ pub fn run() {
             commands::tunnel_status,
             commands::is_autostart_enabled,
             commands::set_autostart,
+            commands::ping_server,
+            commands::get_ping_settings,
+            commands::set_ping_settings,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска InfinityConnect");

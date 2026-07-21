@@ -100,6 +100,26 @@ export const isAutostartEnabled = () => invoke<boolean>("is_autostart_enabled");
 export const setAutostart = (enabled: boolean) =>
   invoke<void>("set_autostart", { enabled });
 
+// ── Пинг (Фаза 5) ──
+
+export type PingMethod = "ProxyGet" | "ProxyHead" | "Tcp" | "Icmp";
+export type PingMode = "Default" | "Double" | "Keepalive";
+
+export interface PingSettings {
+  method: PingMethod;
+  mode: PingMode;
+  test_url: string;
+  timeout_sec: number;
+}
+
+export const pingServer = (keyId: number, serverIndex: number) =>
+  invoke<number>("ping_server", { keyId, serverIndex });
+
+export const getPingSettings = () => invoke<PingSettings>("get_ping_settings");
+
+export const setPingSettings = (settings: PingSettings) =>
+  invoke<void>("set_ping_settings", { settings });
+
 /** Подписка на события состояния туннеля от бэкенда. */
 export async function onTunnelState(
   handler: (state: TunnelStateEvent) => void,

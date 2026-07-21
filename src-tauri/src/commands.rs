@@ -12,6 +12,9 @@ use crate::api::ApiClient;
 use crate::connection::build_connection;
 use crate::engine::{selector, xray_config};
 use crate::error::AppResult;
+use crate::ping::model::PingSettings;
+use crate::ping::Pinger;
+use crate::store;
 use crate::subscription;
 use crate::tunnel::TunnelManager;
 
@@ -157,4 +160,39 @@ pub fn set_autostart(enabled: bool, app: AppHandle) -> AppResult<()> {
     let mgr = app.autolaunch();
     let res = if enabled { mgr.enable() } else { mgr.disable() };
     res.map_err(|e| crate::error::AppError::Other(format!("автозапуск: {e}")))
+}
+
+/// Пинг сервера ключа текущим методом (из настроек). Возвращает мс или -1.
+/// Строит профиль (подписка → fallback) и меряет в блокирующем пуле.
+#[tauri::command]
+pub async fn ping_server(
+    key_id: i64,
+    server_index: usize,
+    api: State<'_, ApiClient>,
+    pinger: State<'_, Pinger>,
+) -> AppResult<i32> {
+    let config = build_connection(&api, key_id, server_index).await?;
+    let settings = load_ping_settings();
+    let pinger = pinger.inner().clone();
+    // Пинг блокирующий (сокеты/процесс) — уводим из async-рантайма.
+    let ms = tauri::async_runtime::spawn_blocking(move || pinger.measure(&config, &settings))
+        .await
+        .unwrap_or(-1);
+    Ok(ms)
+}
+
+/// Текущие настройки пинга (из кэша или дефолт).
+#[tauri::command]
+pub fn get_ping_settings() -> AppResult<PingSettings> {
+    Ok(load_ping_settings())
+}
+
+/// Сохраняет настройки пинга.
+#[tauri::command]
+pub fn set_ping_settings(settings: PingSettings) -> AppResult<()> {
+    store::write_cache(store::PING_SETTINGS, &settings)
+}
+
+fn load_ping_settings() -> PingSettings {
+    store::read_cache::<PingSettings>(store::PING_SETTINGS).unwrap_or_default()
 }

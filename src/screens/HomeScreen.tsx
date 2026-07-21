@@ -1,6 +1,6 @@
 import { useEffect } from "react";
-import { connect, disconnect, keys, keyServers, type Key, type SubscriptionServer } from "../api/commands";
-import { useAppStore } from "../state/appStore";
+import { connect, disconnect, keys, keyServers, pingServer, type Key, type SubscriptionServer } from "../api/commands";
+import { useAppStore, pingKey } from "../state/appStore";
 import { InfinityColors as C, InfinityGradients as G, pingColor } from "../theme/colors";
 import { formatBytes, formatSpeed } from "../util/format";
 import { ConnectHero } from "../components/ConnectHero";
@@ -14,8 +14,8 @@ import { GlassCard, StatusPill, EmojiBadge, Eyebrow, Chip } from "../components/
 export default function HomeScreen() {
   const s = useAppStore();
   const {
-    keys: keyList, serversByKey, selection, tunnel, stats,
-    setKeys, setServers, setSelection, setRoute, setError,
+    keys: keyList, serversByKey, pings, selection, tunnel, stats,
+    setKeys, setServers, setPing, setSelection, setRoute, setError,
   } = s;
 
   useEffect(() => {
@@ -34,11 +34,30 @@ export default function HomeScreen() {
             /* пропускаем ключ без ответа */
           }
         }
+        // Автопинг всех серверов после загрузки (сериализованно на бэке).
+        pingAll();
       } catch (e) {
         setError(errMessage(e));
       }
     })();
-  }, [setKeys, setServers, setSelection, setError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /** Пингует все загруженные серверы по очереди (бэк сериализует proxy-замеры). */
+  async function pingAll() {
+    const map = useAppStore.getState().serversByKey;
+    for (const [keyIdStr, servers] of Object.entries(map)) {
+      const keyId = Number(keyIdStr);
+      for (const srv of servers) {
+        try {
+          const ms = await pingServer(keyId, srv.index);
+          setPing(keyId, srv.index, ms);
+        } catch {
+          setPing(keyId, srv.index, -1);
+        }
+      }
+    }
+  }
 
   const connected = tunnel.status === "connected";
   const connecting = tunnel.status === "connecting";
@@ -90,12 +109,18 @@ export default function HomeScreen() {
       {s.error && <div style={{ color: C.coral, fontSize: 13 }}>{s.error}</div>}
 
       {/* Аккордеон подписок (стиль Happ) */}
-      <Eyebrow>Серверы</Eyebrow>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Eyebrow>Серверы</Eyebrow>
+        <button onClick={pingAll} title="Обновить пинг"
+          style={{ background: "transparent", border: "none", color: C.accentBlue, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
+          ⟳ Пинг
+        </button>
+      </div>
       {keyList.length === 0 && <div style={{ color: C.mutedDim, fontSize: 13 }}>Нет подписок</div>}
       {keyList.map((k, i) => {
         const servers = serversByKey[k.id] ?? [];
         const isSelectedKey = selection?.keyId === k.id;
-        const fastest = fastestIndex(servers);
+        const fastest = fastestIndex(k.id, servers, pings);
         return (
           <div key={k.id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             <KeyCard k={k} number={i + 1} selected={isSelectedKey}
@@ -106,6 +131,7 @@ export default function HomeScreen() {
                 <ServerRow server={srv}
                   selected={selection?.serverIndex === srv.index}
                   isFastest={srv.index === fastest}
+                  ping={pings[pingKey(k.id, srv.index)]}
                   onClick={() => setSelection({ keyId: k.id, serverIndex: srv.index })} />
               </div>
             ))}
@@ -143,7 +169,8 @@ function KeyCard({ k, number, selected, onClick }: { k: Key; number: number; sel
   );
 }
 
-function ServerRow({ server, selected, isFastest, onClick }: { server: SubscriptionServer; selected: boolean; isFastest: boolean; onClick: () => void }) {
+function ServerRow({ server, selected, isFastest, ping, onClick }: { server: SubscriptionServer; selected: boolean; isFastest: boolean; ping: number | undefined; onClick: () => void }) {
+  const pingText = ping === undefined ? "…" : ping < 0 ? "—" : `${ping} мс`;
   return (
     <div onClick={onClick}
       style={{
@@ -166,8 +193,8 @@ function ServerRow({ server, selected, isFastest, onClick }: { server: Subscript
           {server.protocol}{server.port ? ` · ${server.address}:${server.port}` : ""}
         </span>
       </div>
-      {/* Пинг-пилл (Фаза 5): пока «—», цвет по качеству. */}
-      <StatusPill text="—" color={pingColor(null)} />
+      {/* Пинг-пилл: цвет по КАЧЕСТВУ (pingColor). */}
+      <StatusPill text={pingText} color={pingColor(ping === undefined ? null : ping)} />
     </div>
   );
 }
@@ -198,9 +225,18 @@ const FONT = "Segoe UI, system-ui, sans-serif";
 function statusLabel(s: string): string {
   return s === "connected" ? "Подключено" : s === "connecting" ? "Подключение…" : s === "error" ? "Ошибка" : "Отключено";
 }
-function fastestIndex(_servers: SubscriptionServer[]): number {
-  // Пинг появится на Фазе 5 — тогда выбираем минимальный. Пока «нет быстрейшего».
-  return -1;
+/** Индекс сервера с минимальным валидным пингом в подписке (для бейджа). */
+function fastestIndex(keyId: number, servers: SubscriptionServer[], pings: Record<string, number>): number {
+  let best = -1;
+  let bestMs = Infinity;
+  for (const srv of servers) {
+    const ms = pings[pingKey(keyId, srv.index)];
+    if (ms !== undefined && ms >= 0 && ms < bestMs) {
+      bestMs = ms;
+      best = srv.index;
+    }
+  }
+  return best;
 }
 function keyTitle(number: number, name?: string): string {
   const label = (name ?? "").trim();

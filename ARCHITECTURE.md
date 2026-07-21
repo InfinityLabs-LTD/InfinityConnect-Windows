@@ -58,7 +58,7 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
 | `elevation.rs` | Проверка admin + само-relaunch через UAC (wintun/маршруты требуют admin). | ✅ Фаза 2 |
 | `tunnel/` | Оркестратор connect/disconnect: старт ядра → ожидание wintun → маршруты ОС (`routes.rs`) → фоновый опрос статистики. kill-switch/смена сети — Фаза 7. | 🟡 Фаза 2 (MVP) |
 | `sidecar/` | Trait `CoreProcess` + `XrayProcess` (stats через `xray api statsquery`) + `HysteriaProcess` (stats через HTTP `/traffic`). Запуск ядер как std::process. | ✅ Фаза 3 |
-| `ping/` | 4 метода пинга (proxy через SOCKS-inbound, TCP, ICMP) + режимы + таймаут. | ⬜ Фаза 5 |
+| `ping/` | 4 метода: `proxy.rs` (GET/HEAD через временный xray SOCKS-sidecar + режимы Default/Double/Keepalive), TCP (медиана), `icmp.rs` (IcmpSendEcho). `model.rs` — PingMethod/Mode/Settings. Замеры сериализованы. | ✅ Фаза 5 |
 | `routing/` | Split-tunnel (WFP) + домены (Xray routing.rules). | ⬜ Фаза 6 |
 
 ### Конфиги
@@ -108,7 +108,9 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
 - **Фаза 4 — UI-паритет.** ✅ Home (hero + аккордеон Happ + бейдж «⚡ Быстрейший») / Auth /
   Profile / Settings (хаб). Точная палитра InfinityColors + градиенты. Трей (показать/отключить/
   выход, клик по иконке, сворачивание при закрытии). Автозапуск (команды + переключатель в About).
-- **Фаза 5 — Пинг.** 4 метода + режимы + таймаут через временный SOCKS-inbound sidecar.
+- **Фаза 5 — Пинг.** ✅ 4 метода (proxy GET/HEAD через временный xray SOCKS-sidecar + режимы
+  Default/Double/Keepalive, TCP-медиана, ICMP через IP Helper) + таймаут. PingScreen (метод/режим/
+  URL/таймаут). Автопинг в Home, пилл по качеству, бейдж «⚡ Быстрейший» по минимуму.
 - **Фаза 6 — Маршрутизация.** По сайтам (routing.rules) + по приложениям (WFP).
 - **Фаза 7 — Офлайн-кэш + kill-switch + установщик + элевация.**
 

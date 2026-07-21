@@ -31,6 +31,8 @@ interface AppState {
   stats: TunnelStatsEvent | null;
   keys: Key[];
   serversByKey: Record<number, SubscriptionServer[]>;
+  /** Пинг по ключу "keyId:serverIndex": число мс (-1 недоступен), undefined — не мерян. */
+  pings: Record<string, number>;
   selection: Selection | null;
   error: string | null;
 
@@ -39,9 +41,13 @@ interface AppState {
   setStats: (s: TunnelStatsEvent) => void;
   setKeys: (k: Key[]) => void;
   setServers: (keyId: number, servers: SubscriptionServer[]) => void;
+  setPing: (keyId: number, serverIndex: number, ms: number) => void;
   setSelection: (s: Selection) => void;
   setError: (e: string | null) => void;
 }
+
+/** Ключ карты пингов. */
+export const pingKey = (keyId: number, serverIndex: number) => `${keyId}:${serverIndex}`;
 
 export const useAppStore = create<AppState>((set) => ({
   route: "auth",
@@ -49,6 +55,7 @@ export const useAppStore = create<AppState>((set) => ({
   stats: null,
   keys: [],
   serversByKey: {},
+  pings: {},
   selection: null,
   error: null,
 
@@ -63,6 +70,8 @@ export const useAppStore = create<AppState>((set) => ({
   setKeys: (keys) => set({ keys }),
   setServers: (keyId, servers) =>
     set((s) => ({ serversByKey: { ...s.serversByKey, [keyId]: servers } })),
+  setPing: (keyId, serverIndex, ms) =>
+    set((s) => ({ pings: { ...s.pings, [pingKey(keyId, serverIndex)]: ms } })),
   setSelection: (selection) => set({ selection }),
   setError: (error) => set({ error }),
 }));
