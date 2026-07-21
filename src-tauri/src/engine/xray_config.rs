@@ -10,6 +10,8 @@
 
 use serde_json::{json, Value};
 
+use crate::routing::{RoutingSettings, SiteRoutingMode};
+
 use super::{RawXrayConfig, Security, Transport, VlessConfig};
 
 /// Имя wintun-адаптера, создаваемого ядром.
@@ -21,8 +23,8 @@ pub const STATS_API_PORT: u16 = 10085;
 
 /// Строит конфиг для TUN-режима из VLESS-профиля: tun-инбаунд + stats API,
 /// outbound vless + freedom/block, DNS и routing (весь трафик в proxy,
-/// приватные сети — direct).
-pub fn build_vless(config: &VlessConfig, mtu: u32) -> String {
+/// приватные сети — direct, пользовательские домены — по site_mode).
+pub fn build_vless(config: &VlessConfig, mtu: u32, routing: &RoutingSettings) -> String {
     let root = json!({
         "log": {"loglevel": "warning"},
         "stats": {},
@@ -35,7 +37,7 @@ pub fn build_vless(config: &VlessConfig, mtu: u32) -> String {
             {"tag": "direct", "protocol": "freedom"},
             {"tag": "block", "protocol": "blackhole"}
         ],
-        "routing": default_routing(),
+        "routing": default_routing(routing),
     });
     root.to_string()
 }
@@ -105,20 +107,32 @@ fn stats_inbound() -> Value {
     })
 }
 
-fn default_routing() -> Value {
-    json!({
-        "domainStrategy": "IPIfNonMatch",
-        "rules": [
-            // Трафик api-инбаунда → StatsService.
-            {"type": "field", "inboundTag": ["api-in"], "outboundTag": "api"},
-            // Приватные/локальные сети — напрямую (явные CIDR, без geoip.dat).
-            {"type": "field", "outboundTag": "direct", "ip": [
-                "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
-                "127.0.0.0/8", "::1/128", "fc00::/7", "fe80::/10"
-            ]}
-            // Остальное — proxy по умолчанию (первый outbound).
-        ]
-    })
+fn default_routing(routing: &RoutingSettings) -> Value {
+    let mut rules = vec![
+        // Трафик api-инбаунда → StatsService.
+        json!({"type": "field", "inboundTag": ["api-in"], "outboundTag": "api"}),
+        // Приватные/локальные сети — напрямую (явные CIDR, без geoip.dat).
+        json!({"type": "field", "outboundTag": "direct", "ip": [
+            "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16",
+            "127.0.0.0/8", "::1/128", "fc00::/7", "fe80::/10"
+        ]}),
+    ];
+
+    // Пользовательские домены (site_mode): выше режима — имеют приоритет.
+    // Правило `domain: "example.com"` матчит и поддомены (Xray-семантика).
+    let sites: Vec<String> = routing
+        .sites
+        .iter()
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| format!("domain:{}", s.trim()))
+        .collect();
+    if routing.site_mode != SiteRoutingMode::Off && !sites.is_empty() {
+        let tag = if routing.site_mode == SiteRoutingMode::Proxy { "proxy" } else { "direct" };
+        rules.push(json!({"type": "field", "outboundTag": tag, "domain": sites}));
+    }
+    // Остальное — proxy по умолчанию (первый outbound).
+
+    json!({"domainStrategy": "IPIfNonMatch", "rules": rules})
 }
 
 /// Добавляет правило api-инбаунда в существующий routing RawXray (или создаёт его).
@@ -250,7 +264,7 @@ mod tests {
 
     #[test]
     fn vless_reality_is_valid_json_with_expected_shape() {
-        let json = build_vless(&sample_reality(), DEFAULT_MTU);
+        let json = build_vless(&sample_reality(), DEFAULT_MTU, &RoutingSettings::default());
         let v: serde_json::Value = serde_json::from_str(&json).expect("валидный JSON");
 
         // tun-инбаунд присутствует.
@@ -266,6 +280,33 @@ mod tests {
                    "jNXHt1yRo0vDuchQlIP6Z0ZvjT3KtzVI-T4E7RoLJS0");
         // flow проброшен.
         assert_eq!(ob["settings"]["vnext"][0]["users"][0]["flow"], "xtls-rprx-vision");
+    }
+
+    #[test]
+    fn site_routing_proxy_adds_domain_rule() {
+        let routing = RoutingSettings {
+            site_mode: SiteRoutingMode::Proxy,
+            sites: vec!["youtube.com".into(), " netflix.com ".into()],
+            ..Default::default()
+        };
+        let json = build_vless(&sample_reality(), DEFAULT_MTU, &routing);
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let rules = v["routing"]["rules"].as_array().unwrap();
+        // Ищем domain-правило → proxy.
+        let domain_rule = rules.iter().find(|r| r.get("domain").is_some()).unwrap();
+        assert_eq!(domain_rule["outboundTag"], "proxy");
+        let domains = domain_rule["domain"].as_array().unwrap();
+        assert!(domains.iter().any(|d| d == "domain:youtube.com"));
+        // Пробелы обрезаются.
+        assert!(domains.iter().any(|d| d == "domain:netflix.com"));
+    }
+
+    #[test]
+    fn site_routing_off_adds_no_domain_rule() {
+        let json = build_vless(&sample_reality(), DEFAULT_MTU, &RoutingSettings::default());
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let rules = v["routing"]["rules"].as_array().unwrap();
+        assert!(rules.iter().all(|r| r.get("domain").is_none()));
     }
 
     #[test]
@@ -286,7 +327,7 @@ mod tests {
             },
             ..sample_reality()
         };
-        let json = build_vless(&cfg, DEFAULT_MTU);
+        let json = build_vless(&cfg, DEFAULT_MTU, &RoutingSettings::default());
         let v: serde_json::Value = serde_json::from_str(&json).unwrap();
         let xh = &v["outbounds"][0]["streamSettings"]["xhttpSettings"];
         // extra проброшен байт-в-байт (инвариант XHTTP extra).

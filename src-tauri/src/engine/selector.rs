@@ -2,6 +2,8 @@
 //! Vless/RawXray → Xray, Hysteria2 → Hysteria. Возвращает всё, что нужно
 //! оркестратору туннеля: тип ядра, готовый JSON-конфиг и имя wintun-адаптера.
 
+use crate::routing::RoutingSettings;
+
 use super::{hysteria2_config, xray_config, EngineConfig};
 
 /// Какое ядро запускать.
@@ -20,13 +22,15 @@ pub struct CorePlan {
     pub remark: String,
 }
 
-/// Строит план запуска для профиля. `mtu` — MTU tun-интерфейса.
-pub fn select(config: &EngineConfig, mtu: u32) -> CorePlan {
+/// Строит план запуска для профиля. `mtu` — MTU tun-интерфейса. `routing` —
+/// пользовательские правила по сайтам (применяются только к VLESS; RawXray несёт
+/// свой серверный routing, Hysteria2 доменные правила из UI не применяет).
+pub fn select(config: &EngineConfig, mtu: u32, routing: &RoutingSettings) -> CorePlan {
     let remark = config.remark().to_string();
     match config {
         EngineConfig::Vless(v) => CorePlan {
             kind: CoreKind::Xray,
-            config_json: xray_config::build_vless(v, mtu),
+            config_json: xray_config::build_vless(v, mtu, routing),
             tun_name: xray_config::TUN_NAME,
             stats_port: xray_config::STATS_API_PORT,
             remark,

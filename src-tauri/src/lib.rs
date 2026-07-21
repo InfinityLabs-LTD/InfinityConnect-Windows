@@ -13,6 +13,7 @@ mod elevation;
 mod engine;
 mod error;
 mod ping;
+mod routing;
 mod sidecar;
 mod state;
 mod store;
@@ -81,6 +82,8 @@ pub fn run() {
             commands::ping_server,
             commands::get_ping_settings,
             commands::set_ping_settings,
+            commands::get_routing_settings,
+            commands::set_routing_settings,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска InfinityConnect");

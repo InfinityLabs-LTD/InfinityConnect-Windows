@@ -59,7 +59,7 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
 | `tunnel/` | Оркестратор connect/disconnect: старт ядра → ожидание wintun → маршруты ОС (`routes.rs`) → фоновый опрос статистики. kill-switch/смена сети — Фаза 7. | 🟡 Фаза 2 (MVP) |
 | `sidecar/` | Trait `CoreProcess` + `XrayProcess` (stats через `xray api statsquery`) + `HysteriaProcess` (stats через HTTP `/traffic`). Запуск ядер как std::process. | ✅ Фаза 3 |
 | `ping/` | 4 метода: `proxy.rs` (GET/HEAD через временный xray SOCKS-sidecar + режимы Default/Double/Keepalive), TCP (медиана), `icmp.rs` (IcmpSendEcho). `model.rs` — PingMethod/Mode/Settings. Замеры сериализованы. | ✅ Фаза 5 |
-| `routing/` | Split-tunnel (WFP) + домены (Xray routing.rules). | ⬜ Фаза 6 |
+| `routing/` | `mod.rs` — RoutingSettings (site_mode/sites/app_mode/apps). По сайтам: домены → Xray routing.rules (`default_routing`). По приложениям: `perapp.rs` — WFP-задел (реально Фаза 7). | 🟡 Фаза 6 (сайты ✅, WFP-задел) |
 
 ### Конфиги
 | Файл | Назначение |
@@ -111,7 +111,8 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
 - **Фаза 5 — Пинг.** ✅ 4 метода (proxy GET/HEAD через временный xray SOCKS-sidecar + режимы
   Default/Double/Keepalive, TCP-медиана, ICMP через IP Helper) + таймаут. PingScreen (метод/режим/
   URL/таймаут). Автопинг в Home, пилл по качеству, бейдж «⚡ Быстрейший» по минимуму.
-- **Фаза 6 — Маршрутизация.** По сайтам (routing.rules) + по приложениям (WFP).
+- **Фаза 6 — Маршрутизация.** ✅ По сайтам (домены → Xray `routing.rules`, site_mode Proxy/Direct,
+  RoutingScreen). По приложениям — WFP-задел (модель сохраняется, реальный фильтр в Фазе 7 с kill-switch).
 - **Фаза 7 — Офлайн-кэш + kill-switch + установщик + элевация.**
 
 ---

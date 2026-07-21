@@ -14,6 +14,7 @@ use crate::engine::{selector, xray_config};
 use crate::error::AppResult;
 use crate::ping::model::PingSettings;
 use crate::ping::Pinger;
+use crate::routing::{self, RoutingSettings};
 use crate::store;
 use crate::subscription;
 use crate::tunnel::TunnelManager;
@@ -126,8 +127,12 @@ pub async fn connect(
     tunnel: State<'_, TunnelManager>,
 ) -> AppResult<()> {
     let config = build_connection(&api, key_id, server_index).await?;
+    let routing = load_routing_settings();
     // Выбор ядра по профилю: Vless/RawXray → Xray, Hysteria2 → Hysteria.
-    let plan = selector::select(&config, xray_config::DEFAULT_MTU);
+    // Маршрутизация по сайтам применяется к VLESS-конфигу.
+    let plan = selector::select(&config, xray_config::DEFAULT_MTU, &routing);
+    // Split-tunnel по приложениям (WFP — задел Фазы 6, реально с Фазы 7).
+    routing::perapp::apply_per_app(&routing);
     tunnel.connect(app, plan).await
 }
 
@@ -135,6 +140,7 @@ pub async fn connect(
 #[tauri::command]
 pub async fn disconnect(app: AppHandle, tunnel: State<'_, TunnelManager>) -> AppResult<()> {
     tunnel.disconnect(&app).await;
+    routing::perapp::clear_per_app();
     Ok(())
 }
 
@@ -195,4 +201,20 @@ pub fn set_ping_settings(settings: PingSettings) -> AppResult<()> {
 
 fn load_ping_settings() -> PingSettings {
     store::read_cache::<PingSettings>(store::PING_SETTINGS).unwrap_or_default()
+}
+
+/// Текущие настройки маршрутизации.
+#[tauri::command]
+pub fn get_routing_settings() -> AppResult<RoutingSettings> {
+    Ok(load_routing_settings())
+}
+
+/// Сохраняет настройки маршрутизации. Применятся при следующем connect.
+#[tauri::command]
+pub fn set_routing_settings(settings: RoutingSettings) -> AppResult<()> {
+    store::write_cache(store::ROUTING_SETTINGS, &settings)
+}
+
+fn load_routing_settings() -> RoutingSettings {
+    store::read_cache::<RoutingSettings>(store::ROUTING_SETTINGS).unwrap_or_default()
 }

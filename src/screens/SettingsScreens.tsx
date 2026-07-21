@@ -2,7 +2,9 @@ import { useEffect, useState } from "react";
 import {
   isAutostartEnabled, setAutostart,
   getPingSettings, setPingSettings,
+  getRoutingSettings, setRoutingSettings,
   type PingSettings, type PingMethod, type PingMode,
+  type RoutingSettings, type SiteRoutingMode,
 } from "../api/commands";
 import { useAppStore } from "../state/appStore";
 import { InfinityColors as C } from "../theme/colors";
@@ -44,15 +46,77 @@ function HubItem({ icon, title, subtitle, onClick }: { icon: string; title: stri
   );
 }
 
-/** Экран маршрутизации (наполнение — Фаза 6). */
+const SITE_MODES: { value: SiteRoutingMode; label: string; hint: string }[] = [
+  { value: "Off", label: "Выключено", hint: "Список доменов не используется" },
+  { value: "Proxy", label: "Через VPN", hint: "Указанные домены — через VPN" },
+  { value: "Direct", label: "Напрямую", hint: "Указанные домены — мимо VPN" },
+];
+
+/** Экран маршрутизации: по сайтам (домены) + пометка про per-app (Фаза 7). */
 export function RoutingScreen() {
   const { setRoute } = useAppStore();
+  const [r, setR] = useState<RoutingSettings | null>(null);
+  const [draft, setDraft] = useState("");
+
+  useEffect(() => {
+    getRoutingSettings().then((rs) => {
+      setR(rs);
+      setDraft(rs.sites.join("\n"));
+    }).catch(() => {});
+  }, []);
+
+  function update(patch: Partial<RoutingSettings>) {
+    if (!r) return;
+    const next = { ...r, ...patch };
+    setR(next);
+    setRoutingSettings(next).catch(() => {});
+  }
+
+  function commitDomains() {
+    const sites = draft.split("\n").map((s) => s.trim()).filter(Boolean);
+    update({ sites });
+  }
+
+  if (!r) {
+    return (
+      <Scaffold title="Маршрутизация" onBack={() => setRoute("settings")}>
+        <div style={{ color: C.muted }}>Загрузка…</div>
+      </Scaffold>
+    );
+  }
+
   return (
     <Scaffold title="Маршрутизация" onBack={() => setRoute("settings")}>
+      <Eyebrow>По сайтам</Eyebrow>
+      {SITE_MODES.map((m) => (
+        <GlassCard key={m.value} highlighted={r.site_mode === m.value} onClick={() => update({ site_mode: m.value })}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Radio on={r.site_mode === m.value} />
+            <div style={{ flex: 1 }}>
+              <b>{m.label}</b>
+              <div style={{ color: C.muted, fontSize: 12 }}>{m.hint}</div>
+            </div>
+          </div>
+        </GlassCard>
+      ))}
+
+      {r.site_mode !== "Off" && (
+        <>
+          <Eyebrow>Домены (по одному в строке)</Eyebrow>
+          <textarea value={draft} onChange={(e) => setDraft(e.currentTarget.value)} onBlur={commitDomains}
+            placeholder={"youtube.com\nnetflix.com"} rows={5}
+            style={{ width: "100%", padding: "10px 12px", borderRadius: 12, border: `1px solid ${C.stroke}`, background: C.surface, color: C.onSurface, outline: "none", boxSizing: "border-box", fontFamily: "monospace", fontSize: 13, resize: "vertical" }} />
+          <div style={{ color: C.mutedDim, fontSize: 12 }}>
+            «domain» матчит и поддомены. Применяется только к VLESS-серверам.
+          </div>
+        </>
+      )}
+
+      <Eyebrow>По приложениям</Eyebrow>
       <GlassCard>
         <div style={{ color: C.muted, fontSize: 13 }}>
-          Маршрутизация по сайтам (домены → Xray routing.rules) и по приложениям
-          (split-tunnel через WFP) появится на Фазе 6.
+          Split-tunnel по приложениям (WFP по процессу) будет добавлен на Фазе 7
+          вместе с kill-switch.
         </div>
       </GlassCard>
     </Scaffold>

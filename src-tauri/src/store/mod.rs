@@ -85,6 +85,8 @@ pub const CACHE_DISCOVERY: &str = "cache_discovery.json";
 pub const CACHE_KEYS: &str = "cache_keys.json";
 /// Настройки пинга (JSON).
 pub const PING_SETTINGS: &str = "ping_settings.json";
+/// Настройки маршрутизации (JSON).
+pub const ROUTING_SETTINGS: &str = "routing_settings.json";
 
 /// Имя файла кэша тела подписки по её URL (хэш, чтобы имя было безопасным).
 pub fn subscription_cache_name(url: &str) -> String {

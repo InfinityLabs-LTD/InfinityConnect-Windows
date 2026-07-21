@@ -120,6 +120,23 @@ export const getPingSettings = () => invoke<PingSettings>("get_ping_settings");
 export const setPingSettings = (settings: PingSettings) =>
   invoke<void>("set_ping_settings", { settings });
 
+// ── Маршрутизация (Фаза 6) ──
+
+export type SiteRoutingMode = "Off" | "Proxy" | "Direct";
+export type AppRoutingMode = "Off" | "Allow" | "Disallow";
+
+export interface RoutingSettings {
+  site_mode: SiteRoutingMode;
+  sites: string[];
+  app_mode: AppRoutingMode;
+  apps: string[];
+}
+
+export const getRoutingSettings = () => invoke<RoutingSettings>("get_routing_settings");
+
+export const setRoutingSettings = (settings: RoutingSettings) =>
+  invoke<void>("set_routing_settings", { settings });
+
 /** Подписка на события состояния туннеля от бэкенда. */
 export async function onTunnelState(
   handler: (state: TunnelStateEvent) => void,
