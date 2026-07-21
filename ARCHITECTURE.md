@@ -56,10 +56,10 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
 | `store/` | Токены (DPAPI: `dpapi.rs`) + офлайн-кэши discovery/ключей/тел подписок на %APPDATA%. | ✅ Фаза 1 |
 | `device.rs` | HWID (MachineGuid из реестра, UPPER) + метаданные ОС для заголовков. | ✅ Фаза 1 |
 | `elevation.rs` | Проверка admin + само-relaunch через UAC (wintun/маршруты требуют admin). | ✅ Фаза 2 |
-| `tunnel/` | Оркестратор connect/disconnect: старт ядра → ожидание wintun → маршруты ОС (`routes.rs`) → фоновый опрос статистики. kill-switch/смена сети — Фаза 7. | 🟡 Фаза 2 (MVP) |
+| `tunnel/` | Оркестратор: старт ядра → wintun → маршруты (`routes.rs`) + DNS на tun (анти-утечка) → монитор (статистика + переустановка маршрутов при смене сети). `killswitch.rs` — блок не-VPN трафика (firewall), остаётся при обрыве ядра. | ✅ Фаза 7 |
 | `sidecar/` | Trait `CoreProcess` + `XrayProcess` (stats через `xray api statsquery`) + `HysteriaProcess` (stats через HTTP `/traffic`). Запуск ядер как std::process. | ✅ Фаза 3 |
 | `ping/` | 4 метода: `proxy.rs` (GET/HEAD через временный xray SOCKS-sidecar + режимы Default/Double/Keepalive), TCP (медиана), `icmp.rs` (IcmpSendEcho). `model.rs` — PingMethod/Mode/Settings. Замеры сериализованы. | ✅ Фаза 5 |
-| `routing/` | `mod.rs` — RoutingSettings (site_mode/sites/app_mode/apps). По сайтам: домены → Xray routing.rules (`default_routing`). По приложениям: `perapp.rs` — WFP-задел (реально Фаза 7). | 🟡 Фаза 6 (сайты ✅, WFP-задел) |
+| `routing/` | RoutingSettings (site_mode/sites/app_mode/apps/kill_switch). По сайтам: домены → routing.rules. `perapp.rs` — split-tunnel через firewall: Disallow (блок выбранных мимо VPN) реально; Allow требует драйвера (задел). | ✅ Фаза 7 |
 
 ### Конфиги
 | Файл | Назначение |
@@ -113,7 +113,10 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
   URL/таймаут). Автопинг в Home, пилл по качеству, бейдж «⚡ Быстрейший» по минимуму.
 - **Фаза 6 — Маршрутизация.** ✅ По сайтам (домены → Xray `routing.rules`, site_mode Proxy/Direct,
   RoutingScreen). По приложениям — WFP-задел (модель сохраняется, реальный фильтр в Фазе 7 с kill-switch).
-- **Фаза 7 — Офлайн-кэш + kill-switch + установщик + элевация.**
+- **Фаза 7 — Финал.** ✅ Офлайн-кэш (discovery/ключи/тела подписок — с Фазы 1). Смена сети
+  (переустановка маршрутов на tun при Wi-Fi↔ethernet). DNS на tun (анти-утечка). Kill-switch
+  (firewall, остаётся при обрыве). Per-app split-tunnel (firewall Disallow; Allow — задел под
+  драйвер). Установщик NSIS/MSI (`tauri build`), элевация — само-relaunch UAC (Фаза 2).
 
 ---
 

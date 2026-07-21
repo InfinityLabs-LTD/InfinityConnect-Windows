@@ -48,4 +48,7 @@ pub struct RoutingSettings {
     pub app_mode: AppRoutingMode,
     /// Пути/имена процессов для app_mode (например "chrome.exe").
     pub apps: Vec<String>,
+    /// Kill-switch: блокировать не-VPN трафик при обрыве ядра (Фаза 7).
+    #[serde(default)]
+    pub kill_switch: bool,
 }

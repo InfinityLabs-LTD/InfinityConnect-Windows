@@ -7,6 +7,7 @@
 //! Оба ядра сами создают wintun-адаптер (tun-режим), tun2socks не нужен.
 //! Требуются права администратора.
 
+mod killswitch;
 mod routes;
 
 use std::path::PathBuf;
@@ -28,6 +29,8 @@ const XRAY_TUN_GATEWAY: &str = "10.10.0.1";
 const STATS_INTERVAL: Duration = Duration::from_secs(1);
 const TUN_WAIT_ATTEMPTS: u32 = 40;
 const TUN_WAIT_STEP: Duration = Duration::from_millis(250);
+/// Каждые N тиков (по STATS_INTERVAL) проверяем целостность маршрутов (handover).
+const ROUTE_CHECK_TICKS: u32 = 3;
 
 /// Менеджер туннеля: одно активное подключение за раз.
 #[derive(Clone)]
@@ -40,6 +43,8 @@ struct Active {
     process: Arc<Mutex<Box<dyn CoreProcess>>>,
     monitor: JoinHandle<()>,
     if_index: Option<u32>,
+    /// Включён ли kill-switch (чтобы снять при disconnect).
+    kill_switch: bool,
 }
 
 impl TunnelManager {
@@ -51,8 +56,8 @@ impl TunnelManager {
         self.inner.lock().await.is_some()
     }
 
-    /// Поднимает туннель по плану ядра (см. `engine::selector::select`).
-    pub async fn connect(&self, app: AppHandle, plan: CorePlan) -> AppResult<()> {
+    /// Поднимает туннель по плану ядра. `kill_switch` — блокировать не-VPN трафик.
+    pub async fn connect(&self, app: AppHandle, plan: CorePlan, kill_switch: bool) -> AppResult<()> {
         self.disconnect(&app).await;
         emit_state(&app, TunnelState::Connecting);
 
@@ -72,22 +77,31 @@ impl TunnelManager {
             return Err(AppError::Other("TUN-адаптер не создан".into()));
         }
 
-        // 3. Маршруты ОС нужны только Xray (Hysteria задаёт их в своём конфиге).
+        // 3. Маршруты ОС + DNS нужны только Xray (Hysteria задаёт их в конфиге).
         if plan.kind == CoreKind::Xray {
             if let Some(idx) = if_index {
                 routes::add_default_routes(idx, XRAY_TUN_GATEWAY)?;
+                // DNS на tun-адаптер — анти-утечка (системный резолвер в туннель).
+                routes::set_dns(idx, &["1.1.1.1", "8.8.8.8"]);
             }
         }
 
-        // 4. Фоновый монитор: статистика + слежение за процессом.
-        let monitor = spawn_monitor(app.clone(), process.clone(), self.inner.clone());
+        // 4. Kill-switch: блок не-VPN трафика (разрешаем сервер + локалку). Ставим
+        //    ДО объявления Connected, чтобы при мгновенном обрыве не было утечки.
+        if kill_switch {
+            killswitch::enable(&plan.server_ip);
+        }
 
-        *self.inner.lock().await = Some(Active { process, monitor, if_index });
+        // 5. Фоновый монитор: статистика + процесс + переустановка маршрутов
+        //    (network handover при смене сети Wi-Fi↔ethernet).
+        let monitor = spawn_monitor(app.clone(), process.clone(), self.inner.clone(), if_index, plan.kind);
+
+        *self.inner.lock().await = Some(Active { process, monitor, if_index, kill_switch });
         emit_state(&app, TunnelState::Connected(plan.remark));
         Ok(())
     }
 
-    /// Гасит активный туннель и откатывает маршруты.
+    /// Гасит активный туннель, откатывает маршруты и снимает kill-switch.
     pub async fn disconnect(&self, app: &AppHandle) {
         let active = self.inner.lock().await.take();
         if let Some(active) = active {
@@ -96,6 +110,11 @@ impl TunnelManager {
                 routes::remove_default_routes(idx);
             }
             active.process.lock().await.stop();
+            // Kill-switch снимаем только при ЯВНОМ отключении (при обрыве ядра он
+            // остаётся активным — в этом его смысл: не пускать трафик мимо VPN).
+            if active.kill_switch {
+                killswitch::disable();
+            }
         }
         emit_state(app, TunnelState::Disconnected);
     }
@@ -118,10 +137,13 @@ fn spawn_monitor(
     app: AppHandle,
     process: Arc<Mutex<Box<dyn CoreProcess>>>,
     slot: Arc<Mutex<Option<Active>>>,
+    if_index: Option<u32>,
+    kind: CoreKind,
 ) -> JoinHandle<()> {
     tokio::spawn(async move {
         let mut prev_up = 0u64;
         let mut prev_down = 0u64;
+        let mut tick: u32 = 0;
         loop {
             tokio::time::sleep(STATS_INTERVAL).await;
 
@@ -140,6 +162,18 @@ fn spawn_monitor(
             prev_up = t.uplink;
             prev_down = t.downlink;
             emit_stats(&app, t.uplink, t.downlink, up_speed, down_speed);
+
+            // Network handover: раз в ~3с проверяем, что наши default-маршруты на
+            // tun живы (смена сети Wi-Fi↔ethernet сбрасывает таблицу маршрутов).
+            tick = tick.wrapping_add(1);
+            if kind == CoreKind::Xray && tick % ROUTE_CHECK_TICKS == 0 {
+                if let Some(idx) = if_index {
+                    if !routes::default_routes_present(idx) {
+                        let _ = routes::add_default_routes(idx, XRAY_TUN_GATEWAY);
+                        routes::set_dns(idx, &["1.1.1.1", "8.8.8.8"]);
+                    }
+                }
+            }
         }
     })
 }

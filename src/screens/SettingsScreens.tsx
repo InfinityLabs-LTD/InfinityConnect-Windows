@@ -57,11 +57,13 @@ export function RoutingScreen() {
   const { setRoute } = useAppStore();
   const [r, setR] = useState<RoutingSettings | null>(null);
   const [draft, setDraft] = useState("");
+  const [appsDraft, setAppsDraft] = useState("");
 
   useEffect(() => {
     getRoutingSettings().then((rs) => {
       setR(rs);
       setDraft(rs.sites.join("\n"));
+      setAppsDraft(rs.apps.join("\n"));
     }).catch(() => {});
   }, []);
 
@@ -112,12 +114,42 @@ export function RoutingScreen() {
         </>
       )}
 
+      <Eyebrow>Kill-switch</Eyebrow>
+      <GlassCard onClick={() => update({ kill_switch: !r.kill_switch })}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ flex: 1 }}>
+            <b>Блокировать трафик мимо VPN</b>
+            <div style={{ color: C.muted, fontSize: 12 }}>
+              При обрыве ядра не пускать трафик в обход туннеля
+            </div>
+          </div>
+          <Toggle on={r.kill_switch} />
+        </div>
+      </GlassCard>
+
       <Eyebrow>По приложениям</Eyebrow>
       <GlassCard>
-        <div style={{ color: C.muted, fontSize: 13 }}>
-          Split-tunnel по приложениям (WFP по процессу) будет добавлен на Фазе 7
-          вместе с kill-switch.
+        <div style={{ color: C.muted, fontSize: 13, marginBottom: r.app_mode === "Disallow" ? 10 : 0 }}>
+          Режим «кроме выбранных»: указанным приложениям блокируется трафик мимо
+          VPN (по пути .exe). Режим «только выбранные» требует драйвера — позже.
         </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+          {(["Off", "Disallow"] as const).map((m) => (
+            <button key={m} onClick={() => update({ app_mode: m })}
+              style={{ flex: 1, padding: "8px", borderRadius: 10, cursor: "pointer",
+                border: `1px solid ${r.app_mode === m ? C.accentBlue : C.stroke}`,
+                background: r.app_mode === m ? `${C.accentBlue}1F` : "transparent",
+                color: C.onSurface, fontSize: 13 }}>
+              {m === "Off" ? "Выключено" : "Кроме выбранных"}
+            </button>
+          ))}
+        </div>
+        {r.app_mode === "Disallow" && (
+          <textarea value={appsDraft} onChange={(e) => setAppsDraft(e.currentTarget.value)}
+            onBlur={() => update({ apps: appsDraft.split("\n").map((s) => s.trim()).filter(Boolean) })}
+            placeholder={"C:\\Program Files\\App\\app.exe"} rows={3}
+            style={{ width: "100%", marginTop: 10, padding: "10px 12px", borderRadius: 12, border: `1px solid ${C.stroke}`, background: C.spaceElevated, color: C.onSurface, outline: "none", boxSizing: "border-box", fontFamily: "monospace", fontSize: 12, resize: "vertical" }} />
+        )}
       </GlassCard>
     </Scaffold>
   );

@@ -20,6 +20,8 @@ pub struct CorePlan {
     pub tun_name: &'static str,
     pub stats_port: u16,
     pub remark: String,
+    /// Адрес VPN-сервера (для kill-switch: разрешить трафик до него).
+    pub server_ip: String,
 }
 
 /// Строит план запуска для профиля. `mtu` — MTU tun-интерфейса. `routing` —
@@ -27,6 +29,7 @@ pub struct CorePlan {
 /// свой серверный routing, Hysteria2 доменные правила из UI не применяет).
 pub fn select(config: &EngineConfig, mtu: u32, routing: &RoutingSettings) -> CorePlan {
     let remark = config.remark().to_string();
+    let server_ip = config.address().to_string();
     match config {
         EngineConfig::Vless(v) => CorePlan {
             kind: CoreKind::Xray,
@@ -34,6 +37,7 @@ pub fn select(config: &EngineConfig, mtu: u32, routing: &RoutingSettings) -> Cor
             tun_name: xray_config::TUN_NAME,
             stats_port: xray_config::STATS_API_PORT,
             remark,
+            server_ip,
         },
         EngineConfig::RawXray(r) => CorePlan {
             kind: CoreKind::Xray,
@@ -41,6 +45,7 @@ pub fn select(config: &EngineConfig, mtu: u32, routing: &RoutingSettings) -> Cor
             tun_name: xray_config::TUN_NAME,
             stats_port: xray_config::STATS_API_PORT,
             remark,
+            server_ip,
         },
         EngineConfig::Hysteria2(h) => CorePlan {
             kind: CoreKind::Hysteria,
@@ -48,6 +53,7 @@ pub fn select(config: &EngineConfig, mtu: u32, routing: &RoutingSettings) -> Cor
             tun_name: hysteria2_config::TUN_NAME,
             stats_port: hysteria2_config::STATS_API_PORT,
             remark,
+            server_ip,
         },
     }
 }

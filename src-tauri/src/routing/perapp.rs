@@ -1,34 +1,84 @@
-//! Split-tunnel по приложениям через WFP (Windows Filtering Platform).
+//! Split-tunnel по приложениям через Windows Firewall (управляемая надстройка WFP).
 //!
-//! **Статус: задел (Фаза 6, первая итерация).** Полноценный per-app split-tunnel
-//! на Windows требует WFP-провайдера/сублейера и callout-драйвера либо фильтров
-//! по пути процесса (`FWPM_CONDITION_ALE_APP_ID`) — это сотни строк FFI к
-//! `fwpuclnt.dll` и, для надёжного разделения трафика, компонент режима ядра.
-//! Нативного аналога Android `addAllowed/DisallowedApplication` на уровне TUN нет.
+//! **Честные границы Windows.** Полноценный per-app split-tunnel «направить трафик
+//! ЭТОГО процесса в tun, остального — мимо» требует callout-драйвера режима ядра
+//! (перенаправление на уровне пакетов). Без драйвера на прикладном уровне доступна
+//! только БЛОКИРОВКА трафика по пути процесса (`program=<path>`), не перенаправление.
 //!
-//! По ТЗ на первой итерации допустима заглушка: настройки app_mode/apps
-//! сохраняются и доступны в UI, но фильтр пока не устанавливается. Реальная
-//! WFP-реализация — Фаза 7 (полировка) вместе с kill-switch (тоже WFP).
+//! Поэтому реализуем то, что надёжно работает без драйвера:
+//!  - **Disallow** (через VPN всё, КРОМЕ выбранных): выбранным приложениям блокируем
+//!    исходящий трафик, пока VPN активен → они не «утекают» мимо туннеля. Полноценно.
+//!  - **Allow** (через VPN ТОЛЬКО выбранные): корректно на прикладном уровне не
+//!    выразить (нужно перенаправление невыбранных мимо tun). Не применяем — задел
+//!    под драйвер; логируем.
+//!
+//! Правила помечены группой и удаляются строго свои.
+
+use std::process::{Command, Stdio};
 
 use crate::routing::{AppRoutingMode, RoutingSettings};
 
-/// Применяет split-tunnel по приложениям (пока — no-op с логом намерения).
-/// Возвращает true, если фильтр реально установлен (сейчас всегда false).
-pub fn apply_per_app(settings: &RoutingSettings) -> bool {
-    if settings.app_mode == AppRoutingMode::Off || settings.apps.is_empty() {
-        return false;
+const GROUP: &str = "InfinityConnect PerApp";
+const RULE_PREFIX: &str = "InfinityApp-";
+
+/// Применяет split-tunnel по приложениям. Возвращает число установленных правил.
+pub fn apply_per_app(settings: &RoutingSettings) -> usize {
+    clear_per_app();
+    if settings.apps.is_empty() {
+        return 0;
     }
-    // TODO(Фаза 7): WFP-фильтры по FWPM_CONDITION_ALE_APP_ID для путей из
-    // settings.apps; направление в/мимо TUN по app_mode (Allow/Disallow).
-    eprintln!(
-        "[routing] per-app split-tunnel ({:?}, {} прил.) — WFP-фильтр будет на Фазе 7",
-        settings.app_mode,
-        settings.apps.len()
-    );
-    false
+    match settings.app_mode {
+        AppRoutingMode::Off => 0,
+        AppRoutingMode::Disallow => {
+            // Блокируем исходящий трафик выбранных приложений (не «утекают» мимо VPN).
+            let mut n = 0;
+            for (i, path) in settings.apps.iter().enumerate() {
+                if path.trim().is_empty() {
+                    continue;
+                }
+                add_block_rule(i, path.trim());
+                n += 1;
+            }
+            n
+        }
+        AppRoutingMode::Allow => {
+            // На прикладном уровне не реализуемо без callout-драйвера (Фаза с драйвером).
+            eprintln!(
+                "[routing] per-app ALLOW ({} прил.) требует callout-драйвера — не применено",
+                settings.apps.len()
+            );
+            0
+        }
+    }
 }
 
-/// Снимает установленные WFP-фильтры (no-op пока фильтров нет).
+/// Снимает установленные правила per-app.
 pub fn clear_per_app() {
-    // TODO(Фаза 7): удалить наши WFP-фильтры/сублейер.
+    // Удаляем по группе — одним вызовом снимаем все наши правила.
+    let _ = run(&["advfirewall", "firewall", "delete", "rule", &format!("group={GROUP}")]);
+}
+
+fn add_block_rule(idx: usize, program_path: &str) {
+    let name = format!("{RULE_PREFIX}{idx}");
+    let _ = run(&[
+        "advfirewall", "firewall", "add", "rule",
+        &format!("name={name}"),
+        &format!("group={GROUP}"),
+        "dir=out",
+        "action=block",
+        "enable=yes",
+        "profile=any",
+        &format!("program={program_path}"),
+    ]);
+}
+
+fn run(args: &[&str]) -> bool {
+    let mut cmd = Command::new("netsh");
+    cmd.args(args).stdout(Stdio::null()).stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    cmd.status().map(|s| s.success()).unwrap_or(false)
 }

@@ -131,9 +131,9 @@ pub async fn connect(
     // Выбор ядра по профилю: Vless/RawXray → Xray, Hysteria2 → Hysteria.
     // Маршрутизация по сайтам применяется к VLESS-конфигу.
     let plan = selector::select(&config, xray_config::DEFAULT_MTU, &routing);
-    // Split-tunnel по приложениям (WFP — задел Фазы 6, реально с Фазы 7).
+    // Split-tunnel по приложениям (Disallow — блок выбранных мимо VPN).
     routing::perapp::apply_per_app(&routing);
-    tunnel.connect(app, plan).await
+    tunnel.connect(app, plan, routing.kill_switch).await
 }
 
 /// Отключение туннеля.

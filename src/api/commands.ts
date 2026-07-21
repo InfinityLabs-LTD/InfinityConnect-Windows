@@ -130,6 +130,7 @@ export interface RoutingSettings {
   sites: string[];
   app_mode: AppRoutingMode;
   apps: string[];
+  kill_switch: boolean;
 }
 
 export const getRoutingSettings = () => invoke<RoutingSettings>("get_routing_settings");

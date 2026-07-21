@@ -55,6 +55,41 @@ pub fn remove_default_routes(if_index: u32) {
     }
 }
 
+/// Активны ли наши default-маршруты на tun-интерфейсе. Смена сети (Wi-Fi↔ethernet)
+/// может сбросить их — тогда оркестратор переустанавливает (network handover).
+pub fn default_routes_present(if_index: u32) -> bool {
+    let Some(out) = run_capture(&["interface", "ipv4", "show", "route"]) else {
+        return true; // не смогли проверить — не трогаем
+    };
+    // Ищем обе half-default записи на нашем интерфейсе.
+    let idx = if_index.to_string();
+    let has = |prefix: &str| {
+        out.lines().any(|l| l.contains(prefix) && l.split_whitespace().any(|t| t == idx))
+    };
+    has("0.0.0.0/1") && has("128.0.0.0/1")
+}
+
+/// Прописывает DNS на tun-интерфейс (анти-утечка: системный DNS в туннель).
+/// Ядро резолвит через свои dns-серверы, но системный резолвер должен идти в tun.
+pub fn set_dns(if_index: u32, servers: &[&str]) {
+    // Первый — основной, остальные — дополнительные.
+    if let Some((first, rest)) = servers.split_first() {
+        let _ = run(&[
+            "interface", "ipv4", "set", "dnsservers",
+            &format!("name={if_index}"),
+            "static", first, "primary",
+        ]);
+        for (i, dns) in rest.iter().enumerate() {
+            let _ = run(&[
+                "interface", "ipv4", "add", "dnsservers",
+                &format!("name={if_index}"),
+                dns,
+                &format!("index={}", i + 2),
+            ]);
+        }
+    }
+}
+
 // ── netsh-обёртки ──
 
 fn run(args: &[&str]) -> AppResult<()> {

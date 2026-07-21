@@ -54,8 +54,10 @@ npm run tauri build         # NSIS + MSI установщики в src-tauri/tar
 - **Фаза 5 — Пинг.** ✅ 4 метода (proxy GET/HEAD, TCP, ICMP) + режимы + таймаут, PingScreen,
   автопинг в Home, бейдж «⚡ Быстрейший».
 - **Фаза 6 — Маршрутизация.** ✅ По сайтам (домены → Xray routing.rules) в RoutingScreen.
-  По приложениям (WFP) — задел, реально на Фазе 7.
-- **Далее — Фаза 7 (Офлайн-кэш + kill-switch + установщик):** WFP kill-switch и per-app,
-  MSI/NSIS-установщик, полировка.
+- **Фаза 7 — Финал.** ✅ Смена сети (туннель переживает Wi-Fi↔ethernet), DNS в туннель
+  (анти-утечка), kill-switch (блок трафика мимо VPN), per-app split-tunnel (блокировка выбранных),
+  установщик NSIS/MSI (`npm run tauri build`).
+
+Все 7 фаз реализованы. Требует прогонки на реальной машине с админ-правами и сервером.
 
 См. [ARCHITECTURE.md](ARCHITECTURE.md).
