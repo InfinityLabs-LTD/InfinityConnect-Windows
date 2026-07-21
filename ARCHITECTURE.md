@@ -27,12 +27,14 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
 | Файл | За что отвечает | Статус |
 |---|---|---|
 | `main.tsx` | Точка входа React. | ✅ Фаза 0 |
-| `App.tsx` | Пока: тест моста invoke/emit (`ping` + подписка на `tunnel://state`). Дальше — навигация Home/Auth/Profile/Settings. | ✅ Фаза 0 |
-| `api/commands.ts` | Типы и вызовы Tauri-команд (invoke) + подписка на события (listen). Единственная точка общения с бэком. | ✅ Фаза 0 |
-| `state/appStore.ts` | Zustand-стор — зеркало VpnStateHolder (состояние туннеля/статистика). | ✅ Фаза 0 |
+| `App.tsx` | Роутер Auth/Home + восстановление сессии (is_authorized) + подписка на `tunnel://state`. | ✅ Фаза 1 |
+| `api/commands.ts` | Типы и вызовы всех Tauri-команд (invoke) + listen. Единственная точка общения с бэком. | ✅ Фаза 1 |
+| `state/appStore.ts` | Zustand-стор: route, ключи, серверы, состояние туннеля (зеркало VpnStateHolder). | ✅ Фаза 1 |
+| `screens/AuthScreen.tsx` | Вход: discovery по домену + логин. | ✅ Фаза 1 |
+| `screens/HomeScreen.tsx` | Список ключей и серверов подписки (стиль Happ, раскрыт). Connect/пинг — Фазы 2/5. | 🟡 Фаза 1 |
 | `theme/colors.ts` | Палитра InfinityColors (фиолетовая) + `pingColor()` (по качеству, не по методу). | ⏳ значения-плейсхолдеры |
 | `styles.css` | Глобальные стили. | ✅ |
-| `screens/` | Home / Auth / Profile / Settings(Routing/Ping/About). | ⬜ Фаза 4 |
+| `screens/` (Profile/Settings) | Profile / Settings(Routing/Ping/About). | ⬜ Фаза 4 |
 | `components/` | Переиспользуемые виджеты (стиль Happ). | ⬜ Фаза 4 |
 
 ---
@@ -42,18 +44,19 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
 | Файл | За что отвечает | Статус |
 |---|---|---|
 | `main.rs` | Бинарь; прячет консоль в релизе, зовёт `lib::run()`. | ✅ Фаза 0 |
-| `lib.rs` | Сборка Tauri-приложения: плагины, трей, setup, `invoke_handler`. | ✅ Фаза 0 |
-| `commands.rs` | `#[tauri::command]` — мост фронт↔бэк (пока `ping`). | ✅ Фаза 0 |
+| `lib.rs` | Сборка Tauri-приложения: плагины, трей, `.manage(ApiClient)`, `invoke_handler`. | ✅ |
+| `commands.rs` | `#[tauri::command]` — мост: ping/discover/login/logout/is_authorized/user_info/keys/key_servers. | ✅ Фаза 1 |
 | `state.rs` | Источник состояния туннеля → эмит `tunnel://state` (аналог VpnStateHolder). | ✅ Фаза 0 |
-| `api/` | HTTP-клиент к серверу (reqwest): auth/keys/config/user/discovery. | ⬜ Фаза 1 |
-| `subscription/` | Парсер тела подписки → профили серверов (JSON/base64/URI). | ⬜ Фаза 1 |
-| `engine/` | Модель профиля (аналог EngineConfig) + сборка Xray JSON. | ⬜ Фаза 2 |
+| `error.rs` | `AppError`/`AppResult` (аналог Android AppResult), сериализуется во фронт. | ✅ Фаза 1 |
+| `api/` | reqwest-клиент: discovery→base_url, login/refresh (Bearer, авто-refresh 401), keys/config/user, тело подписки (HWID-заголовки), офлайн-фолбэк на кэш. `dto.rs` — все DTO. | ✅ Фаза 1 |
+| `subscription/` | Парсер тела (JSON-конфиги панели/base64/URI) + `vless_uri`/`hysteria2_uri`/`uri`. RawXray для сложных, XHTTP extra без интерпретации. | ✅ Фаза 1 |
+| `engine/` | Модель профиля `EngineConfig` (Vless/RawXray/Hysteria2, Transport, Security). Сборка Xray JSON — Фаза 2. | 🟡 модель ✅, JSON ⬜ |
+| `store/` | Токены (DPAPI: `dpapi.rs`) + офлайн-кэши discovery/ключей/тел подписок на %APPDATA%. | ✅ Фаза 1 |
+| `device.rs` | HWID (MachineGuid из реестра, UPPER) + метаданные ОС для заголовков. | ✅ Фаза 1 |
 | `tunnel/` | wintun-адаптер, маршруты ОС, оркестратор туннеля, kill-switch, смена сети. | ⬜ Фаза 2/7 |
 | `sidecar/` | Запуск/менеджмент xray.exe / hysteria.exe, чтение stats. | ⬜ Фаза 2/3 |
 | `ping/` | 4 метода пинга (proxy через SOCKS-inbound, TCP, ICMP) + режимы + таймаут. | ⬜ Фаза 5 |
 | `routing/` | Split-tunnel (WFP) + домены (Xray routing.rules). | ⬜ Фаза 6 |
-| `store/` | Настройки, токены (DPAPI), офлайн-кэши на %APPDATA%. | ⬜ Фаза 1/7 |
-| `device.rs` | HWID (MachineGuid из реестра). | ⬜ Фаза 1 |
 
 ### Конфиги
 | Файл | Назначение |
@@ -88,7 +91,9 @@ Frontend (React/TS)  ──invoke()──►  Backend (Rust / src-tauri)
 ## Фазы (порядок работ)
 
 - **Фаза 0 — Каркас Tauri.** ✅ Окно, трей, autostart, мост invoke/emit end-to-end (`ping`).
-- **Фаза 1 — Аккаунт и подписки.** `api/` + `subscription/` + `store/` + `device.rs`.
+- **Фаза 1 — Аккаунт и подписки.** ✅ `api/` + `subscription/` + `engine/` (модель) + `store/` +
+  `device.rs`. Логин, discovery, ключи, список серверов подписки, HWID, токены (DPAPI),
+  офлайн-кэши. Экраны Auth/Home.
 - **Фаза 2 — MVP-туннель.** `wintun` + `engine/` (Xray JSON) + `sidecar/` xray.exe; один VLESS.
 - **Фаза 3 — Hysteria2 + RawXray.** hysteria.exe sidecar; проброс автовыбора целиком.
 - **Фаза 4 — UI-паритет.** Home/Auth/Profile/Settings, фиолетовая тема, трей, автозапуск.

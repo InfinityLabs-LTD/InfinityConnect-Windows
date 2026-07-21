@@ -39,6 +39,9 @@ npm run tauri build         # NSIS + MSI установщики в src-tauri/tar
 
 ## Статус
 
-**Фаза 0 — каркас.** Окно, системный трей, автозапуск, мост invoke/emit работает
-end-to-end на тестовой команде `ping`. Логика (аккаунт/туннель/пинг/маршрутизация) —
-следующие фазы, см. [ARCHITECTURE.md](ARCHITECTURE.md).
+- **Фаза 0 — каркас.** ✅ Окно, трей, автозапуск, мост invoke/emit (`ping`).
+- **Фаза 1 — аккаунт и подписки.** ✅ Логин, discovery, ключи, список серверов
+  подписки (стиль Happ), HWID (MachineGuid), токены (DPAPI), офлайн-кэши.
+- **Далее — Фаза 2 (MVP-туннель):** wintun + engine (Xray JSON) + sidecar xray.exe.
+
+См. [ARCHITECTURE.md](ARCHITECTURE.md).
