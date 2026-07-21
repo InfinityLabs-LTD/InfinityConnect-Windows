@@ -5,8 +5,14 @@
 //! подключены только `commands` (мост invoke) и `state` (эмит состояния),
 //! системный трей и плагин автозапуска.
 
+mod api;
 mod commands;
+mod device;
+mod engine;
+mod error;
 mod state;
+mod store;
+mod subscription;
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -15,6 +21,7 @@ use tauri::{
 };
 use tauri_plugin_autostart::MacosLauncher;
 
+use crate::api::ApiClient;
 use crate::state::{emit_state, TunnelState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -25,13 +32,24 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec![]),
         ))
+        // Общий HTTP-клиент к серверу (discovery/токены восстанавливаются из кэша).
+        .manage(ApiClient::new())
         .setup(|app| {
             build_tray(app.handle())?;
-            // Фаза 0: эмитим стартовое состояние — проверка моста emit end-to-end.
+            // Эмитим стартовое состояние туннеля — мост emit end-to-end.
             emit_state(app.handle(), TunnelState::Disconnected);
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![commands::ping])
+        .invoke_handler(tauri::generate_handler![
+            commands::ping,
+            commands::discover,
+            commands::login,
+            commands::logout,
+            commands::is_authorized,
+            commands::user_info,
+            commands::keys,
+            commands::key_servers,
+        ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска InfinityConnect");
 }

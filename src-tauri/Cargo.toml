@@ -18,6 +18,21 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# HTTP-клиент к серверу (rustls — без OpenSSL-зависимости на Windows).
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+thiserror = "2"
+base64 = "0.22"
+# Каталоги %APPDATA% и т.п.
+dirs = "5"
+
+# Windows-специфика: DPAPI (шифрование токенов), MachineGuid (HWID), версия ОС.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+] }
+winreg = "0.52"
 
 [features]
 # по умолчанию — прод-профиль без кастом-протокола.
