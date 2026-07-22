@@ -45,7 +45,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/OWNER/REPO/releases/latest/download/latest.json"
+        "https://github.com/InfinityLabs-LTD/InfinityConnect-Windows/releases/latest/download/latest.json"
       ],
       "pubkey": "ЗАМЕНИТЬ_НА_СОДЕРЖИМОЕ_infinity.key.pub"
     }
