@@ -1,0 +1,26 @@
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+body {
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+  background: #0B0716;
+  color: #F2EEFA;
+}
+
+button { font-family: inherit; }
+
+@keyframes ic-sheen { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+@keyframes ic-spin { to { transform: rotate(360deg); } }
+@keyframes ic-fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

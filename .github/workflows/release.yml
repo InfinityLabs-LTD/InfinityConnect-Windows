@@ -74,3 +74,40 @@ jobs:
           prerelease: false
           # tauri-action соберёт NSIS/MSI + подписи + latest.json и зальёт в релиз.
           # releaseBody попадёт в latest.json → баннер обновления покажет «Что нового».
+
+      # ── Кастомный установщик-bootstrapper (Discord-стиль) ──
+      # Основное приложение уже собрано выше (target/release/infinity-connect.exe).
+      # Собираем payload из его выхлопа, затем сам установщик, подписываем и
+      # добавляем в тот же релиз отдельным ассетом.
+      - name: Собрать payload установщика
+        run: powershell -ExecutionPolicy Bypass -File installer/scripts/build-payload.ps1
+
+      - name: Установить зависимости установщика
+        working-directory: installer
+        run: npm ci
+
+      - name: Собрать установщик (bootstrapper)
+        working-directory: installer
+        run: npm run tauri build -- --no-bundle
+
+      - name: Подписать и переименовать установщик
+        shell: pwsh
+        env:
+          WINDOWS_CERT_PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
+          WINDOWS_CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
+        run: |
+          $exe = "installer/src-tauri/target/release/infinity-setup.exe"
+          if (-not (Test-Path $exe)) { throw "Установщик не собрался: $exe" }
+          # Подпись «Infinity Labs» тем же скриптом, что и остальные артефакты.
+          powershell -ExecutionPolicy Bypass -File scripts/sign.ps1 -Path $exe
+          $ver = "${{ github.ref_name }}".TrimStart("v")
+          $out = "InfinityConnect-Setup-$ver.exe"
+          Copy-Item $exe $out -Force
+          echo "SETUP_ASSET=$out" >> $env:GITHUB_ENV
+
+      - name: Добавить установщик в релиз
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" "$env:SETUP_ASSET" --clobber

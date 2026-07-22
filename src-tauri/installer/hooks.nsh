@@ -14,9 +14,8 @@
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  ; Гарантированно останавливаем ядра (xray/sing-box/hysteria) перед удалением,
-  ; чтобы файлы не были заняты и деинсталляция прошла чисто.
-  nsExec::Exec 'taskkill /F /IM sing-box.exe /T'
-  nsExec::Exec 'taskkill /F /IM xray.exe /T'
-  nsExec::Exec 'taskkill /F /IM hysteria.exe /T'
+  ; Останавливаем ТОЛЬКО ядра из нашей папки установки ($INSTDIR), по пути, а не
+  ; по имени процесса — иначе `taskkill /IM sing-box.exe` убил бы одноимённые
+  ; ядра сторонних приложений (напр. Happ тоже использует sing-box.exe/xray.exe).
+  nsExec::Exec 'wmic process where "ExecutablePath like \'$INSTDIR\\%\'" call terminate'
 !macroend
