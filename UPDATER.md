@@ -27,27 +27,31 @@ npm run tauri signer generate -- -w $env:USERPROFILE\.tauri\infinity.key
 
 ## 2. Один раз: endpoint
 
-В `src-tauri/tauri.conf.json` замени `OWNER/REPO` на свой GitHub-репозиторий:
-```json
-"endpoints": ["https://github.com/OWNER/REPO/releases/latest/download/latest.json"]
-```
+Уже настроен на репозиторий `InfinityLabs-LTD/InfinityConnect-Windows`
+(`src-tauri/tauri.conf.json`). Менять не нужно.
 
-## 3. При каждом релизе
+## 3. Один раз: секреты GitHub Actions
 
-1. Подними версию в `src-tauri/tauri.conf.json` (`"version": "0.2.0"`).
-2. Собери подписанный бандл (приватный ключ через переменные окружения):
+В настройках репозитория (**Settings → Secrets and variables → Actions**) добавь два секрета:
+- `TAURI_SIGNING_PRIVATE_KEY` — содержимое файла `infinity.key` (приватный ключ из шага 1).
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — пароль этого ключа.
+
+## 4. При каждом релизе (автоматически!)
+
+Сборка и публикация автоматизированы через GitHub Actions (`.github/workflows/release.yml`).
+Тебе нужно только:
+
+1. Поднять версию в `src-tauri/tauri.conf.json` (`"version": "0.2.0"`), закоммитить.
+2. Создать и запушить тег:
    ```powershell
-   $env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $env:USERPROFILE\.tauri\infinity.key -Raw
-   $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "твой_пароль"
-   npm run tauri build
+   git tag v0.2.0
+   git push origin v0.2.0
    ```
-3. В `src-tauri/target/release/bundle/` появятся:
-   - установщик `.exe`/`.msi`
-   - подписи `.sig`
-   - `latest.json` (манифест обновления)
-4. Создай **GitHub Release** с тегом версии и залей туда: установщик, `.sig` и `latest.json`.
+3. GitHub Actions сам соберёт подписанный установщик + `latest.json` и опубликует
+   GitHub Release. Через пару минут у всех пользователей в «О приложении» появится
+   «Доступна версия 0.2.0».
 
-Готово — у всех пользователей в «О приложении» появится «Доступна версия …».
+> Проверить прогресс сборки: вкладка **Actions** в репозитории.
 
 ## Как это выглядит у пользователя
 
