@@ -1,4 +1,5 @@
 import { C } from "./theme";
+import logo from "./assets/logo.png";
 
 /** Левая фирменная панель: логотип «I», название, версия — как в макете. */
 export function BrandRail({ version }: { version: string }) {
@@ -16,13 +17,10 @@ export function BrandRail({ version }: { version: string }) {
         backgroundImage: `linear-gradient(${C.indigo} 1px, transparent 1px), linear-gradient(90deg, ${C.indigo} 1px, transparent 1px)`,
         backgroundSize: "26px 26px",
       }} />
-      <div style={{
-        width: 72, height: 72, borderRadius: 20, marginTop: 8, zIndex: 1,
-        background: `linear-gradient(160deg, ${C.indigo}, ${C.magenta})`,
-        display: "grid", placeItems: "center", color: "#fff",
-        fontSize: 42, fontWeight: 800, fontFamily: "Georgia, 'Times New Roman', serif",
+      <img src={logo} alt="Infinity Connect" width={72} height={72} style={{
+        borderRadius: 20, marginTop: 8, zIndex: 1, position: "relative",
         boxShadow: "0 12px 30px -6px rgba(108,60,255,0.6)",
-      }}>I</div>
+      }} />
       <div style={{ textAlign: "center", zIndex: 1 }}>
         <b style={{ fontSize: 16, display: "block" }}>Infinity</b>
         <span style={{ color: C.cyan, fontSize: 16, fontWeight: 700 }}>Connect</span>

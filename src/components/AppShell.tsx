@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAppStore } from "../state/appStore";
 import { InfinityColors as C, InfinityGradients as G } from "../theme/colors";
+import logo from "../assets/logo.png";
 
 type NavKey = "home" | "settings/routing" | "settings/ping" | "settings/logs" | "profile" | "settings/about";
 
@@ -49,7 +50,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside style={{ width: 232, flexShrink: 0, display: "flex", flexDirection: "column", padding: "22px 14px", gap: 6, borderRight: `1px solid ${C.stroke}`, background: "rgba(11,7,22,0.55)", backdropFilter: "blur(14px)" }}>
         {/* Лого. */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 10px 20px" }}>
-          <div style={{ width: 40, height: 40, borderRadius: 12, background: G.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 20, color: "#fff", boxShadow: `0 6px 24px ${C.accentBlue}55` }}>I</div>
+          <img src={logo} alt="Infinity Connect" width={40} height={40} style={{ borderRadius: 12, boxShadow: `0 6px 24px ${C.accentBlue}55` }} />
           <div>
             <div style={{ fontWeight: 700, fontSize: 15, lineHeight: 1.1 }}>Infinity</div>
             <div style={{ color: C.muted, fontSize: 12 }}>Connect</div>
