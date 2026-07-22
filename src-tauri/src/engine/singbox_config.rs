@@ -33,10 +33,11 @@ pub fn build(mtu: u32, routing: &RoutingSettings) -> String {
     json!({
         "log": {"level": "warn", "timestamp": true},
         "dns": {
-            // Резолвим через прокси (анти-утечка DNS), fallback — direct.
+            // Новый DNS-формат sing-box 1.12+ (type-based). Старый {address,detour}
+            // устарел и удаляется в 1.14. Резолвим через прокси (анти-утечка), fallback direct.
             "servers": [
-                {"tag": "dns-proxy", "address": "1.1.1.1", "detour": "proxy"},
-                {"tag": "dns-direct", "address": "8.8.8.8", "detour": "direct"}
+                {"type": "udp", "tag": "dns-proxy", "server": "1.1.1.1", "detour": "proxy"},
+                {"type": "udp", "tag": "dns-direct", "server": "8.8.8.8", "detour": "direct"}
             ],
             "final": "dns-proxy",
             "strategy": "prefer_ipv4"
@@ -111,6 +112,9 @@ fn build_route(routing: &RoutingSettings) -> Value {
     json!({
         "auto_detect_interface": true,
         "final": final_outbound,
+        // Обязателен с sing-box 1.12+ (иначе deprecated → сломается в 1.14).
+        // Резолвер доменов для dial-полей — direct-DNS (сервер прокси резолвим напрямую).
+        "default_domain_resolver": "dns-direct",
         "rules": rules
     })
 }

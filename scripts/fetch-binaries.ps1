@@ -6,7 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $XrayVersion = "26.3.27"       # = Android BuildFlags.XRAY_CORE_VERSION
 $HysteriaVersion = "2.10.0"    # apernet/hysteria 2.x
-$SingboxVersion = "1.12.12"    # SagerNet/sing-box — TUN + per-app routing
+$SingboxVersion = "1.13.14"    # SagerNet/sing-box — TUN + per-app routing
 $BinDir = Join-Path $PSScriptRoot "..\src-tauri\binaries"
 $BinDir = [System.IO.Path]::GetFullPath($BinDir)
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null

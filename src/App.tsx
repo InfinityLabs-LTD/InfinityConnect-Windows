@@ -4,6 +4,7 @@ import { useAppStore } from "./state/appStore";
 import { InfinityColors as C } from "./theme/colors";
 import { MeshBackground } from "./components/MeshBackground";
 import { AppShell } from "./components/AppShell";
+import { UpdateBanner } from "./components/UpdateBanner";
 import AuthScreen from "./screens/AuthScreen";
 import HomeScreen from "./screens/HomeScreen";
 import ProfileScreen from "./screens/ProfileScreen";
@@ -60,11 +61,12 @@ export default function App() {
     );
   }
 
-  // После логина — широкий лейаут: сайдбар + контент.
+  // После логина — широкий лейаут: сайдбар + контент + баннер обновления.
   return (
     <>
       <MeshBackground />
       <AppShell>{renderContent(route)}</AppShell>
+      <UpdateBanner />
     </>
   );
 }
