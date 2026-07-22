@@ -9,7 +9,7 @@
 
 /// Версия клиента в User-Agent (панель отдаёт конфиги для InfinityVPN*; проверено —
 /// `InfinityVPN-Windows` панель принимает и возвращает реальный конфиг).
-pub const USER_AGENT: &str = "InfinityVPN-Windows/1.0.0";
+pub const USER_AGENT: &str = "InfinityVPN-Windows/1.0";
 
 /// Стабильный HWID (верхний регистр, как у Happ): `MachineGuid` из реестра.
 /// При недоступности реестра — детерминированный fallback от имени ПК.

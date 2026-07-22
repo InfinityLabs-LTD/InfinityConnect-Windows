@@ -20,7 +20,7 @@ import type { Update } from "@tauri-apps/plugin-updater";
 const XRAY_VERSION = "26.3.27";
 const HYSTERIA_VERSION = "2.10.0";
 const SINGBOX_VERSION = "1.13.14";
-const APP_VERSION = "0.1.0";
+const APP_VERSION = "1.0.0";
 
 /** Хаб настроек: 3 пункта → Маршрутизация / Пинг / О приложении. */
 export function SettingsHub() {

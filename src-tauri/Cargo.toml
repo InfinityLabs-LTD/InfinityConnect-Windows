@@ -1,6 +1,6 @@
 [package]
 name = "infinity-connect"
-version = "0.1.0"
+version = "1.0.0"
 description = "InfinityConnect — Windows VPN client"
 authors = ["Infinity Labs"]
 edition = "2021"
