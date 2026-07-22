@@ -29,6 +29,12 @@
     "active": true,
     "targets": ["nsis", "msi"],
     "createUpdaterArtifacts": true,
+    "publisher": "Infinity Labs",
+    "homepage": "https://github.com/InfinityLabs-LTD/InfinityConnect-Windows",
+    "copyright": "© 2026 Infinity Labs",
+    "shortDescription": "Infinity Connect — VPN-клиент",
+    "longDescription": "Infinity Connect — VPN-клиент с гибридным ядром sing-box/Xray/Hysteria2, раздельным туннелированием по приложениям и гибкой маршрутизацией.",
+    "category": "Utility",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -37,8 +43,24 @@
     ],
     "resources": ["binaries/*"],
     "windows": {
+      "signCommand": {
+        "cmd": "powershell",
+        "args": [
+          "-ExecutionPolicy",
+          "Bypass",
+          "-File",
+          "../scripts/sign.ps1",
+          "-Path",
+          "%1"
+        ]
+      },
       "nsis": {
-        "installMode": "perMachine"
+        "installMode": "perMachine",
+        "languages": ["Russian", "English"],
+        "displayLanguageSelector": false,
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp"
       }
     }
   },
