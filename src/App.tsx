@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { isAuthorized, onTunnelState, onTunnelStats, tunnelStatus } from "./api/commands";
 import { useAppStore } from "./state/appStore";
-import { InfinityColors as C, InfinityGradients as G } from "./theme/colors";
+import { InfinityColors as C } from "./theme/colors";
+import { MeshBackground } from "./components/MeshBackground";
+import { AppShell } from "./components/AppShell";
 import AuthScreen from "./screens/AuthScreen";
 import HomeScreen from "./screens/HomeScreen";
 import ProfileScreen from "./screens/ProfileScreen";
-import { SettingsHub, RoutingScreen, PingScreen, AboutScreen } from "./screens/SettingsScreens";
+import { RoutingScreen, PingScreen, AboutScreen, LogsScreen } from "./screens/SettingsScreens";
 
 /**
  * Корень приложения: восстановление сессии → роутинг. Подписки на события
@@ -39,19 +41,42 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div style={{ minHeight: "100vh", background: G.screen, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Segoe UI, system-ui, sans-serif" }}>
-        <span style={{ color: C.accentBlue }}>Infinity Connect…</span>
-      </div>
+      <>
+        <MeshBackground />
+        <div style={{ position: "relative", zIndex: 1, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "Segoe UI, system-ui, sans-serif" }}>
+          <span style={{ color: C.accentBlue }}>Infinity Connect…</span>
+        </div>
+      </>
     );
   }
 
+  // До логина — полноэкранный экран входа (без сайдбара).
+  if (route === "auth") {
+    return (
+      <>
+        <MeshBackground />
+        <AuthScreen />
+      </>
+    );
+  }
+
+  // После логина — широкий лейаут: сайдбар + контент.
+  return (
+    <>
+      <MeshBackground />
+      <AppShell>{renderContent(route)}</AppShell>
+    </>
+  );
+}
+
+function renderContent(route: string) {
   switch (route) {
-    case "home": return <HomeScreen />;
     case "profile": return <ProfileScreen />;
-    case "settings": return <SettingsHub />;
+    case "settings":
     case "settings/routing": return <RoutingScreen />;
     case "settings/ping": return <PingScreen />;
+    case "settings/logs": return <LogsScreen />;
     case "settings/about": return <AboutScreen />;
-    default: return <AuthScreen />;
+    default: return <HomeScreen />;
   }
 }

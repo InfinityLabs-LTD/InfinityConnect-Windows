@@ -20,13 +20,25 @@ export function GlassCard({
   return (
     <div
       onClick={onClick}
+      onMouseEnter={(e) => {
+        if (!onClick) return;
+        e.currentTarget.style.borderColor = `${C.accentBlue}8C`;
+        e.currentTarget.style.transform = "translateY(-2px)";
+        e.currentTarget.style.boxShadow = `0 10px 30px ${C.space}CC`;
+      }}
+      onMouseLeave={(e) => {
+        if (!onClick) return;
+        e.currentTarget.style.borderColor = highlighted ? `${C.accentBlue}8C` : C.stroke;
+        e.currentTarget.style.transform = "translateY(0)";
+        e.currentTarget.style.boxShadow = "none";
+      }}
       style={{
         background: highlighted ? C.surfaceHi : C.surface,
         border: `1px solid ${highlighted ? `${C.accentBlue}8C` : C.stroke}`,
         borderRadius: 18,
         padding: 14,
         cursor: onClick ? "pointer" : "default",
-        transition: "background 160ms, border-color 160ms",
+        transition: "background 160ms, border-color 160ms, transform 160ms, box-shadow 160ms",
         ...style,
       }}
     >

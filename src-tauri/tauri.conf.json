@@ -13,9 +13,9 @@
     "windows": [
       {
         "title": "Infinity Connect",
-        "width": 420,
+        "width": 1120,
         "height": 720,
-        "minWidth": 380,
+        "minWidth": 900,
         "minHeight": 600,
         "resizable": true,
         "center": true
@@ -28,6 +28,7 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -39,6 +40,14 @@
       "nsis": {
         "installMode": "perMachine"
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/OWNER/REPO/releases/latest/download/latest.json"
+      ],
+      "pubkey": "ЗАМЕНИТЬ_НА_СОДЕРЖИМОЕ_infinity.key.pub"
     }
   }
 }

@@ -138,6 +138,23 @@ export const getRoutingSettings = () => invoke<RoutingSettings>("get_routing_set
 export const setRoutingSettings = (settings: RoutingSettings) =>
   invoke<void>("set_routing_settings", { settings });
 
+/** Установленное приложение для выбора в split-tunnel. */
+export interface InstalledApp {
+  name: string;
+  exe_names: string[];
+}
+
+export const listInstalledApps = () => invoke<InstalledApp[]>("list_installed_apps");
+
+/** Лог одного ядра (stderr). */
+export interface CoreLog {
+  core: string;
+  content: string;
+}
+
+export const readCoreLogs = () => invoke<CoreLog[]>("read_core_logs");
+export const clearCoreLogs = () => invoke<void>("clear_core_logs");
+
 /** Подписка на события состояния туннеля от бэкенда. */
 export async function onTunnelState(
   handler: (state: TunnelStateEvent) => void,

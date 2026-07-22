@@ -80,20 +80,43 @@ pub fn read_cache<T: DeserializeOwned>(name: &str) -> Option<T> {
     serde_json::from_slice(&bytes).ok()
 }
 
-/// Имена файлов кэшей.
+// ── Зашифрованные кэши (DPAPI) для чувствительных данных ──
+// Тела подписок и ключи содержат адреса серверов, UUID, Reality-ключи. На диске
+// храним их зашифрованными (привязка к пользователю ОС), чтобы casual-доступ к
+// файлам не раскрывал конфиги. NB: это защита ДИСКА, не от владельца машины —
+// в памяти процесса и в running-конфиге данные всё равно есть.
+
+/// Пишет значение как зашифрованный DPAPI-кэш (расширение .bin).
+pub fn write_cache_secure<T: Serialize>(name: &str, value: &T) -> AppResult<()> {
+    let json = serde_json::to_vec(value)?;
+    let cipher = dpapi::protect(&json)?;
+    fs::write(path(name)?, cipher).map_err(|e| AppError::Storage(e.to_string()))
+}
+
+/// Читает зашифрованный DPAPI-кэш. `None`, если нет/повреждён/чужой пользователь.
+pub fn read_cache_secure<T: DeserializeOwned>(name: &str) -> Option<T> {
+    let p = path(name).ok()?;
+    let cipher = fs::read(p).ok()?;
+    let json = dpapi::unprotect(&cipher).ok()?;
+    serde_json::from_slice(&json).ok()
+}
+
+/// Имена файлов кэшей. Discovery — публичные URL, не секрет (JSON). Ключи —
+/// содержат subscription_url/адреса, храним зашифрованными (.bin).
 pub const CACHE_DISCOVERY: &str = "cache_discovery.json";
-pub const CACHE_KEYS: &str = "cache_keys.json";
-/// Настройки пинга (JSON).
+pub const CACHE_KEYS: &str = "cache_keys.bin";
+/// Настройки пинга (JSON — не секрет).
 pub const PING_SETTINGS: &str = "ping_settings.json";
-/// Настройки маршрутизации (JSON).
+/// Настройки маршрутизации (JSON — не секрет).
 pub const ROUTING_SETTINGS: &str = "routing_settings.json";
 
-/// Имя файла кэша тела подписки по её URL (хэш, чтобы имя было безопасным).
+/// Имя файла зашифрованного кэша тела подписки по её URL (хэш имени).
+/// Тело подписки — самое чувствительное (адреса, UUID, Reality-ключи).
 pub fn subscription_cache_name(url: &str) -> String {
     let mut hash: u64 = 0xcbf29ce484222325;
     for &b in url.as_bytes() {
         hash ^= b as u64;
         hash = hash.wrapping_mul(0x100000001b3);
     }
-    format!("cache_sub_{hash:016x}.json")
+    format!("cache_sub_{hash:016x}.bin")
 }

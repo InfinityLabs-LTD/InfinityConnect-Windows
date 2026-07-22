@@ -10,8 +10,6 @@
 //! Общий режим трафика = ALL (весь трафик в VPN, приватные сети direct), как в
 //! текущем Android-UI. BYPASS_RU/CUSTOM в UI убраны — оставляем ALL.
 
-pub mod perapp;
-
 use serde::{Deserialize, Serialize};
 
 /// Режим маршрутизации по сайтам (доменам) — правила routing.rules Xray.

@@ -14,7 +14,7 @@ use crate::engine::{selector, xray_config};
 use crate::error::AppResult;
 use crate::ping::model::PingSettings;
 use crate::ping::Pinger;
-use crate::routing::{self, RoutingSettings};
+use crate::routing::RoutingSettings;
 use crate::store;
 use crate::subscription;
 use crate::tunnel::TunnelManager;
@@ -128,11 +128,9 @@ pub async fn connect(
 ) -> AppResult<()> {
     let config = build_connection(&api, key_id, server_index).await?;
     let routing = load_routing_settings();
-    // Выбор ядра по профилю: Vless/RawXray → Xray, Hysteria2 → Hysteria.
-    // Маршрутизация по сайтам применяется к VLESS-конфигу.
+    // Гибрид: ядро-прокси (socks) + sing-box (TUN + split-tunnel по процессам).
+    // Split-tunnel по приложениям (3 режима) встроен в sing-box-конфиг через select().
     let plan = selector::select(&config, xray_config::DEFAULT_MTU, &routing);
-    // Split-tunnel по приложениям (Disallow — блок выбранных мимо VPN).
-    routing::perapp::apply_per_app(&routing);
     tunnel.connect(app, plan, routing.kill_switch).await
 }
 
@@ -140,7 +138,6 @@ pub async fn connect(
 #[tauri::command]
 pub async fn disconnect(app: AppHandle, tunnel: State<'_, TunnelManager>) -> AppResult<()> {
     tunnel.disconnect(&app).await;
-    routing::perapp::clear_per_app();
     Ok(())
 }
 
@@ -217,4 +214,49 @@ pub fn set_routing_settings(settings: RoutingSettings) -> AppResult<()> {
 
 fn load_routing_settings() -> RoutingSettings {
     store::read_cache::<RoutingSettings>(store::ROUTING_SETTINGS).unwrap_or_default()
+}
+
+/// Список установленных приложений (для выбора в split-tunnel). Сканирование
+/// Start Menu блокирующее — уводим в blocking-пул.
+#[tauri::command]
+pub async fn list_installed_apps() -> AppResult<Vec<crate::apps::InstalledApp>> {
+    let apps = tauri::async_runtime::spawn_blocking(crate::apps::list_installed)
+        .await
+        .unwrap_or_default();
+    Ok(apps)
+}
+
+/// Каталог с логами ядер (`<bin>/<core>_stderr.log`).
+pub struct LogsDir(pub std::path::PathBuf);
+
+/// Лог одного ядра для экрана логов.
+#[derive(Debug, Serialize)]
+pub struct CoreLog {
+    /// Ядро: "xray" | "hysteria" | "singbox".
+    pub core: String,
+    /// Содержимое stderr-лога (может быть пустым).
+    pub content: String,
+}
+
+/// Читает stderr-логи всех ядер (для экрана логов в настройках).
+#[tauri::command]
+pub fn read_core_logs(logs: State<'_, LogsDir>) -> AppResult<Vec<CoreLog>> {
+    let dir = logs.0.clone();
+    let mut out = Vec::new();
+    for core in ["singbox", "xray", "hysteria"] {
+        let path = dir.join(format!("{core}_stderr.log"));
+        let content = std::fs::read_to_string(&path).unwrap_or_default();
+        out.push(CoreLog { core: core.to_string(), content });
+    }
+    Ok(out)
+}
+
+/// Очищает stderr-логи ядер (кнопка «Очистить» на экране логов).
+#[tauri::command]
+pub fn clear_core_logs(logs: State<'_, LogsDir>) -> AppResult<()> {
+    let dir = logs.0.clone();
+    for core in ["singbox", "xray", "hysteria"] {
+        let _ = std::fs::write(dir.join(format!("{core}_stderr.log")), b"");
+    }
+    Ok(())
 }

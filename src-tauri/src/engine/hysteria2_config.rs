@@ -62,6 +62,34 @@ pub fn build(config: &Hysteria2Config, mtu: u32) -> String {
     root.to_string()
 }
 
+/// Гибрид: hysteria слушает локальный SOCKS5 вместо TUN (TUN поднимает sing-box).
+/// Тот же server/auth/tls/obfs/bandwidth, но выход — socks5 на 127.0.0.1:port.
+pub fn build_socks_proxy(config: &Hysteria2Config, socks_port: u16) -> String {
+    let mut root = json!({
+        "server": format!("{}:{}", host_for_server(&config.address), config.port),
+        "auth": config.auth,
+        "tls": tls_block(config),
+        "socks5": {"listen": format!("127.0.0.1:{socks_port}")},
+        "trafficStats": {"listen": format!("127.0.0.1:{STATS_API_PORT}")}
+    });
+    let obj = root.as_object_mut().unwrap();
+    if let Some(pwd) = config.obfs_password.as_deref().filter(|s| !s.is_empty()) {
+        obj.insert("obfs".into(), json!({"type": "salamander", "salamander": {"password": pwd}}));
+    }
+    if config.up_mbps.is_some() || config.down_mbps.is_some() {
+        let mut bw = json!({});
+        let b = bw.as_object_mut().unwrap();
+        if let Some(up) = config.up_mbps {
+            b.insert("up".into(), json!(format!("{up} mbps")));
+        }
+        if let Some(down) = config.down_mbps {
+            b.insert("down".into(), json!(format!("{down} mbps")));
+        }
+        obj.insert("bandwidth".into(), bw);
+    }
+    root.to_string()
+}
+
 fn tls_block(config: &Hysteria2Config) -> Value {
     let mut tls = json!({"insecure": config.insecure});
     if let Some(sni) = config.sni.as_deref().filter(|s| !s.is_empty()) {

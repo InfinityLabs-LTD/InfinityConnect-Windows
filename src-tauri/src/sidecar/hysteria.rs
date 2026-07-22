@@ -38,7 +38,8 @@ impl HysteriaProcess {
             .arg("--disable-update-check")
             .current_dir(exe_dir)
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            // stderr ядра → лог-файл (диагностика падений при поднятии tun).
+            .stderr(super::core_log(exe_dir, "hysteria"));
         hide_window(&mut cmd);
 
         let child = cmd

@@ -1,7 +1,38 @@
 //! DTO ответов сервера (аналог Android `data/remote/dto/*.kt`).
 //! Все опциональные поля — с `#[serde(default)]`, т.к. API их отдаёт не всегда.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Панель отдаёт числовые id как СТРОКИ (`"3"`, `"577633336"`). Принимаем и
+/// строку, и число → i64 (иначе serde падает `error decoding response body`).
+fn de_flex_i64<'de, D: Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StrOrInt {
+        Int(i64),
+        Str(String),
+    }
+    match StrOrInt::deserialize(d)? {
+        StrOrInt::Int(n) => Ok(n),
+        StrOrInt::Str(s) => s.trim().parse().map_err(serde::de::Error::custom),
+    }
+}
+
+/// То же, но для опционального поля (`null`/отсутствует → None).
+fn de_flex_opt_i64<'de, D: Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum StrOrIntOrNull {
+        Int(i64),
+        Str(String),
+    }
+    match Option::<StrOrIntOrNull>::deserialize(d)? {
+        None => Ok(None),
+        Some(StrOrIntOrNull::Int(n)) => Ok(Some(n)),
+        Some(StrOrIntOrNull::Str(s)) if s.trim().is_empty() => Ok(None),
+        Some(StrOrIntOrNull::Str(s)) => s.trim().parse().map(Some).map_err(serde::de::Error::custom),
+    }
+}
 
 // ── Discovery ──
 
@@ -72,6 +103,7 @@ pub struct KeysResponseDto {
 /// конфигов для XHTTP/Hysteria2.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KeyDto {
+    #[serde(deserialize_with = "de_flex_i64")]
     pub id: i64,
     #[serde(default)]
     pub name: Option<String>,
@@ -167,7 +199,7 @@ pub struct ConfigDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserInfoDto {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "de_flex_opt_i64")]
     pub user_id: Option<i64>,
     #[serde(default)]
     pub username: Option<String>,

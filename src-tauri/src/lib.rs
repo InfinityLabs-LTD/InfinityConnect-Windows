@@ -6,6 +6,7 @@
 //! системный трей и плагин автозапуска.
 
 mod api;
+mod apps;
 mod commands;
 mod connection;
 mod device;
@@ -42,6 +43,9 @@ pub fn run() {
             MacosLauncher::LaunchAgent,
             Some(vec![]),
         ))
+        // Авто-обновление (проверка/скачивание/установка подписанных релизов).
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         // Общий HTTP-клиент к серверу (discovery/токены восстанавливаются из кэша).
         .manage(ApiClient::new())
         .setup(|app| {
@@ -51,10 +55,26 @@ pub fn run() {
             // В dev — src-tauri/binaries; в проде — resource_dir/binaries.
             let bin_dir = resolve_binaries_dir(app.handle());
             app.manage(TunnelManager::new(bin_dir.clone()));
-            app.manage(Pinger::new(bin_dir));
+            app.manage(Pinger::new(bin_dir.clone()));
+            // Каталог логов ядер (там же лежат *_stderr.log) — для экрана логов.
+            app.manage(commands::LogsDir(bin_dir));
 
             // Эмитим стартовое состояние туннеля — мост emit end-to-end.
             emit_state(app.handle(), TunnelState::Disconnected);
+
+            // Автообновление подписок: первый прогон через ~10с после старта,
+            // далее раз в 12 часов. Обновляет зашифрованный кэш тел подписок.
+            {
+                use tauri::Manager;
+                let api = app.state::<ApiClient>().inner().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                    loop {
+                        let _ = api.refresh_subscriptions().await;
+                        tokio::time::sleep(std::time::Duration::from_secs(12 * 60 * 60)).await;
+                    }
+                });
+            }
             Ok(())
         })
         // Крестик прячет окно в трей, а не завершает приложение (VPN продолжает
@@ -84,6 +104,9 @@ pub fn run() {
             commands::set_ping_settings,
             commands::get_routing_settings,
             commands::set_routing_settings,
+            commands::list_installed_apps,
+            commands::read_core_logs,
+            commands::clear_core_logs,
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска InfinityConnect");

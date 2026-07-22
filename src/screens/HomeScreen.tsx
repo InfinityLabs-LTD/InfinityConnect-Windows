@@ -1,10 +1,12 @@
 import { useEffect } from "react";
 import { connect, disconnect, keys, keyServers, pingServer, type Key, type SubscriptionServer } from "../api/commands";
 import { useAppStore, pingKey } from "../state/appStore";
-import { InfinityColors as C, InfinityGradients as G, pingColor } from "../theme/colors";
+import { InfinityColors as C, pingColor } from "../theme/colors";
 import { formatBytes, formatSpeed } from "../util/format";
+import { countryCodeFromRemark } from "../util/countryFlag";
+import { Flag, hasFlag } from "../components/Flag";
 import { ConnectHero } from "../components/ConnectHero";
-import { GlassCard, StatusPill, EmojiBadge, Eyebrow, Chip } from "../components/ui";
+import { GlassCard, StatusPill, EmojiBadge, Chip } from "../components/ui";
 
 /**
  * Главный экран (Фаза 4): hero-кнопка connect/disconnect + панель статистики +
@@ -15,7 +17,7 @@ export default function HomeScreen() {
   const s = useAppStore();
   const {
     keys: keyList, serversByKey, pings, selection, tunnel, stats,
-    setKeys, setServers, setPing, setSelection, setRoute, setError,
+    setKeys, setServers, setPing, setSelection, setError,
   } = s;
 
   useEffect(() => {
@@ -77,70 +79,69 @@ export default function HomeScreen() {
     : undefined;
 
   return (
-    <div style={{ minHeight: "100vh", background: G.screen, color: C.onSurface, fontFamily: FONT, padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* Топбар */}
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <b style={{ fontSize: 18, letterSpacing: -0.4 }}>Infinity Connect</b>
-        <div style={{ display: "flex", gap: 4 }}>
-          <IconBtn title="Профиль" onClick={() => setRoute("profile")}>👤</IconBtn>
-          <IconBtn title="Настройки" onClick={() => setRoute("settings")}>⚙️</IconBtn>
+    <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+      {/* ЛЕВАЯ КОЛОНКА: hero подключения + статистика. */}
+      <div style={{ flex: "1 1 340px", minWidth: 320, maxWidth: 440, display: "flex", flexDirection: "column", gap: 18 }}>
+        <div style={{
+          display: "flex", flexDirection: "column", alignItems: "center", gap: 14,
+          padding: "34px 24px 30px", borderRadius: 24,
+          background: "rgba(28,19,56,0.5)", border: `1px solid ${C.stroke}`, backdropFilter: "blur(12px)",
+        }}>
+          <ConnectHero status={tunnel.status} enabled={!!selection || connected || connecting} onToggle={onHero} compact={false} />
+          <div style={{ fontSize: 16, fontWeight: 600 }}>{statusLabel(tunnel.status)}</div>
+          {selectedServer && (
+            <div style={{ color: C.muted, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ opacity: 0.7 }}>Сервер:</span> {selectedServer.remark}
+            </div>
+          )}
+          {tunnel.status === "error" && tunnel.message && (
+            <div style={{ color: C.coral, fontSize: 12, maxWidth: 340, textAlign: "center" }}>{tunnel.message}</div>
+          )}
         </div>
-      </header>
 
-      {/* Hero */}
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-        <ConnectHero status={tunnel.status} enabled={!!selection || connected || connecting} onToggle={onHero} compact={!connected && !connecting} />
-        <div style={{ color: C.muted, fontSize: 13 }}>
-          {statusLabel(tunnel.status)}{selectedServer ? ` · ${selectedServer.remark}` : ""}
+        {/* Статистика — всегда видна (нули до подключения). */}
+        <div style={{ display: "flex", gap: 12 }}>
+          <Stat label="↓ Скачано" value={formatBytes(stats?.downBytes ?? 0)} sub={formatSpeed(stats?.downSpeed ?? 0)} />
+          <Stat label="↑ Отправлено" value={formatBytes(stats?.upBytes ?? 0)} sub={formatSpeed(stats?.upSpeed ?? 0)} />
         </div>
-        {tunnel.status === "error" && tunnel.message && (
-          <div style={{ color: C.coral, fontSize: 12, maxWidth: 340, textAlign: "center" }}>{tunnel.message}</div>
-        )}
+
+        {s.error && <div style={{ color: C.coral, fontSize: 13 }}>{s.error}</div>}
       </div>
 
-      {/* Статистика */}
-      {connected && stats && (
-        <div style={{ display: "flex", gap: 8 }}>
-          <Stat label="↓ Скачано" value={formatBytes(stats.downBytes)} sub={formatSpeed(stats.downSpeed)} />
-          <Stat label="↑ Отправлено" value={formatBytes(stats.upBytes)} sub={formatSpeed(stats.upSpeed)} />
+      {/* ПРАВАЯ КОЛОНКА: серверы. */}
+      <div style={{ flex: "2 1 420px", minWidth: 340, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Серверы</h2>
+          <button onClick={pingAll} title="Обновить пинг"
+            style={{ background: C.surface, border: `1px solid ${C.stroke}`, borderRadius: 10, padding: "7px 12px", color: C.accentBlue, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+            ⟳ Обновить пинг
+          </button>
         </div>
-      )}
-
-      {s.error && <div style={{ color: C.coral, fontSize: 13 }}>{s.error}</div>}
-
-      {/* Аккордеон подписок (стиль Happ) */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <Eyebrow>Серверы</Eyebrow>
-        <button onClick={pingAll} title="Обновить пинг"
-          style={{ background: "transparent", border: "none", color: C.accentBlue, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>
-          ⟳ Пинг
-        </button>
+        {keyList.length === 0 && <div style={{ color: C.mutedDim, fontSize: 13 }}>Нет подписок</div>}
+        {keyList.map((k, i) => {
+          const servers = serversByKey[k.id] ?? [];
+          const isSelectedKey = selection?.keyId === k.id;
+          const fastest = fastestIndex(k.id, servers, pings);
+          return (
+            <div key={k.id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <KeyCard k={k} number={i + 1} selected={isSelectedKey}
+                onClick={() => servers[0] && setSelection({ keyId: k.id, serverIndex: servers[0].index })} />
+              {isSelectedKey && servers.map((srv) => (
+                <div key={srv.index} style={{ paddingLeft: 12 }}>
+                  <ServerRow server={srv}
+                    selected={selection?.serverIndex === srv.index}
+                    isFastest={srv.index === fastest}
+                    ping={pings[pingKey(k.id, srv.index)]}
+                    onClick={() => setSelection({ keyId: k.id, serverIndex: srv.index })} />
+                </div>
+              ))}
+              {isSelectedKey && servers.length === 0 && (
+                <div style={{ paddingLeft: 12, color: C.mutedDim, fontSize: 12 }}>Загрузка серверов…</div>
+              )}
+            </div>
+          );
+        })}
       </div>
-      {keyList.length === 0 && <div style={{ color: C.mutedDim, fontSize: 13 }}>Нет подписок</div>}
-      {keyList.map((k, i) => {
-        const servers = serversByKey[k.id] ?? [];
-        const isSelectedKey = selection?.keyId === k.id;
-        const fastest = fastestIndex(k.id, servers, pings);
-        return (
-          <div key={k.id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            <KeyCard k={k} number={i + 1} selected={isSelectedKey}
-              onClick={() => servers[0] && setSelection({ keyId: k.id, serverIndex: servers[0].index })} />
-            {/* Серверы раскрыты у выбранного ключа (аккордеон Happ). */}
-            {isSelectedKey && servers.map((srv) => (
-              <div key={srv.index} style={{ paddingLeft: 12 }}>
-                <ServerRow server={srv}
-                  selected={selection?.serverIndex === srv.index}
-                  isFastest={srv.index === fastest}
-                  ping={pings[pingKey(k.id, srv.index)]}
-                  onClick={() => setSelection({ keyId: k.id, serverIndex: srv.index })} />
-              </div>
-            ))}
-            {isSelectedKey && servers.length === 0 && (
-              <div style={{ paddingLeft: 12, color: C.mutedDim, fontSize: 12 }}>Загрузка серверов…</div>
-            )}
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -173,16 +174,19 @@ function ServerRow({ server, selected, isFastest, ping, onClick }: { server: Sub
   const pingText = ping === undefined ? "…" : ping < 0 ? "—" : `${ping} мс`;
   return (
     <div onClick={onClick}
+      onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${C.accentBlue}8C`; e.currentTarget.style.transform = "translateX(3px)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = selected ? `${C.accentBlue}8C` : C.stroke; e.currentTarget.style.transform = "translateX(0)"; }}
       style={{
         display: "flex", alignItems: "center", gap: 12, cursor: "pointer",
         background: selected ? C.surfaceHi : C.surface,
         border: `1px solid ${selected ? `${C.accentBlue}8C` : C.stroke}`,
-        borderRadius: 16, padding: "11px 12px",
+        borderRadius: 16, padding: "12px 14px",
+        transition: "border-color 160ms, transform 160ms",
       }}>
-      <EmojiBadge emoji="🌐" size={38} />
+      <ServerFlag remark={server.remark} />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontWeight: 600 }}>{server.remark}</span>
+          <span style={{ fontWeight: 600 }}>{stripCountryCode(server.remark)}</span>
           {isFastest && (
             <span style={{ color: C.mint, background: `${C.mint}1F`, borderRadius: 6, padding: "2px 7px", fontSize: 11, fontWeight: 600 }}>
               ⚡ Быстрейший
@@ -190,13 +194,26 @@ function ServerRow({ server, selected, isFastest, ping, onClick }: { server: Sub
           )}
         </div>
         <span style={{ color: C.muted, fontSize: 12 }}>
-          {server.protocol}{server.port ? ` · ${server.address}:${server.port}` : ""}
+          {protocolDisplay(server.protocol)}
         </span>
       </div>
       {/* Пинг-пилл: цвет по КАЧЕСТВУ (pingColor). */}
       <StatusPill text={pingText} color={pingColor(ping === undefined ? null : ping)} />
     </div>
   );
+}
+
+/** Кружок-бейдж с SVG-флагом страны сервера (или глобус, если страна не распознана). */
+function ServerFlag({ remark }: { remark: string }) {
+  const cc = countryCodeFromRemark(remark);
+  if (cc && hasFlag(cc)) {
+    return (
+      <div style={{ width: 38, height: 38, borderRadius: "50%", background: C.spaceElevated, border: `1px solid ${C.stroke}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, overflow: "hidden" }}>
+        <Flag code={cc} size={24} />
+      </div>
+    );
+  }
+  return <EmojiBadge emoji="🌐" size={38} />;
 }
 
 function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
@@ -209,18 +226,7 @@ function Stat({ label, value, sub }: { label: string; value: string; sub: string
   );
 }
 
-function IconBtn({ children, title, onClick }: { children: string; title: string; onClick: () => void }) {
-  return (
-    <button title={title} onClick={onClick}
-      style={{ background: C.surface, border: `1px solid ${C.stroke}`, borderRadius: 10, width: 38, height: 38, fontSize: 16, cursor: "pointer" }}>
-      {children}
-    </button>
-  );
-}
-
 // ── хелперы ──
-
-const FONT = "Segoe UI, system-ui, sans-serif";
 
 function statusLabel(s: string): string {
   return s === "connected" ? "Подключено" : s === "connecting" ? "Подключение…" : s === "error" ? "Ошибка" : "Отключено";
@@ -239,12 +245,29 @@ function fastestIndex(keyId: number, servers: SubscriptionServer[], pings: Recor
   return best;
 }
 function keyTitle(number: number, name?: string): string {
-  const label = (name ?? "").trim();
+  // Убираем технический суффикс @bot.local (и подобные @…) из имени ключа.
+  const label = (name ?? "").trim().replace(/@[\w.-]+$/, "").trim();
   const hasName = label && !label.startsWith("Ключ #");
   return hasName ? `Ключ ${number} (${label})` : `Ключ ${number}`;
 }
+/** Убирает код страны/эмодзи-флаг из начала remark (флаг уже показан слева):
+ *  «RU LTE» → «LTE», «🇳🇱 NL Нидерланды» → «Нидерланды». */
+function stripCountryCode(remark: string): string {
+  // Сначала срезаем ведущий не-буквенный мусор (эмодзи-флаг, пробелы).
+  let s = remark.replace(/^[^A-Za-zА-Яа-я]+/, "");
+  // Затем 2-буквенный код + разделитель, если он был.
+  const stripped = s.replace(/^[A-Za-z]{2}[\s|·:_-]+/, "").trim();
+  return stripped.length > 0 ? stripped : s.trim() || remark;
+}
 function protocolLabel(p: string): string {
   return p.toUpperCase() === "HYSTERIA2" ? "Hysteria2" : "VLESS";
+}
+/** Подпись протокола сервера (вместо IP:порт — не раскрываем адреса). */
+function protocolDisplay(p: string): string {
+  const up = p.toUpperCase();
+  if (up === "HYSTERIA2") return "Hysteria2 · QUIC";
+  if (up === "VLESS") return "VLESS · Reality/TLS";
+  return p;
 }
 function statusLine(k: Key): string {
   if (k.status === "EXPIRED") return "Срок истёк";

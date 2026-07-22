@@ -3,9 +3,11 @@
 //! Требуются права администратора (создание адаптера + маршруты).
 
 mod hysteria;
+mod singbox;
 mod xray;
 
 pub use hysteria::HysteriaProcess;
+pub use singbox::SingboxProcess;
 pub use xray::XrayProcess;
 
 use std::path::Path;
@@ -34,12 +36,27 @@ pub trait CoreProcess: Send {
     fn query_traffic(&self) -> Traffic;
 }
 
-/// Запускает ядро нужного вида по готовому конфигу. `stats_port` — порт API
-/// статистики (у каждого ядра свой протокол её чтения).
-pub fn start(kind: CoreKind, exe_dir: &Path, config_json: &str, stats_port: u16) -> AppResult<Box<dyn CoreProcess>> {
+/// Запускает ядро-прокси (xray/hysteria) в socks-режиме по готовому конфигу.
+/// `stats_port` — порт API статистики (у каждого ядра свой протокол её чтения).
+pub fn start_proxy(kind: CoreKind, exe_dir: &Path, config_json: &str, stats_port: u16) -> AppResult<Box<dyn CoreProcess>> {
     match kind {
         CoreKind::Xray => Ok(Box::new(XrayProcess::start(exe_dir, config_json, stats_port)?)),
         CoreKind::Hysteria => Ok(Box::new(HysteriaProcess::start(exe_dir, config_json, stats_port)?)),
+    }
+}
+
+/// Запускает sing-box (TUN + routing по процессам).
+pub fn start_singbox(exe_dir: &Path, config_json: &str) -> AppResult<Box<dyn CoreProcess>> {
+    Ok(Box::new(SingboxProcess::start(exe_dir, config_json)?))
+}
+
+/// stderr ядра → `<exe_dir>/<name>_stderr.log` (truncate при каждом старте).
+/// При ошибке создания файла — молча `null` (диагностика не критична для работы).
+pub(crate) fn core_log(exe_dir: &Path, name: &str) -> std::process::Stdio {
+    let path = exe_dir.join(format!("{name}_stderr.log"));
+    match std::fs::File::create(&path) {
+        Ok(f) => std::process::Stdio::from(f),
+        Err(_) => std::process::Stdio::null(),
     }
 }
 

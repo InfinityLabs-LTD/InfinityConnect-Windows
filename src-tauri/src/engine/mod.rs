@@ -9,6 +9,7 @@
 
 pub mod hysteria2_config;
 pub mod selector;
+pub mod singbox_config;
 pub mod xray_config;
 
 use serde::Serialize;

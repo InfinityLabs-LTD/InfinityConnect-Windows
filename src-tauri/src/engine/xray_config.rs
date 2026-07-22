@@ -66,6 +66,62 @@ pub fn build_raw(config: &RawXrayConfig, mtu: u32) -> String {
     root.to_string()
 }
 
+/// Гибрид (sing-box TUN + xray-прокси): xray слушает локальный SOCKS-порт (udp on),
+/// весь трафик уходит в VLESS-outbound. TUN поднимает sing-box, а не xray. Со stats
+/// API — счётчик трафика работает как в TUN-режиме.
+pub fn build_socks_proxy(config: &VlessConfig, socks_port: u16) -> String {
+    json!({
+        "log": {"loglevel": "warning"},
+        "stats": {},
+        "api": {"tag": "api", "services": ["StatsService"]},
+        "policy": {"system": {"statsOutboundUplink": true, "statsOutboundDownlink": true}},
+        "inbounds": [
+            {
+                "tag": "socks", "protocol": "socks", "listen": "127.0.0.1", "port": socks_port,
+                "settings": {"auth": "noauth", "udp": true}
+            },
+            stats_inbound()
+        ],
+        "outbounds": [
+            vless_outbound(config),
+            {"tag": "direct", "protocol": "freedom"},
+            {"tag": "block", "protocol": "blackhole"}
+        ],
+        "routing": {"rules": [
+            json!({"type": "field", "inboundTag": ["api-in"], "outboundTag": "api"})
+        ]}
+    })
+    .to_string()
+}
+
+/// Гибрид для RawXray-подписки: сохраняет outbounds/routing/balancers (автовыбор,
+/// XHTTP, fallback), но inbound — локальный SOCKS вместо TUN. sing-box гонит в него.
+pub fn build_socks_proxy_raw(config: &RawXrayConfig, socks_port: u16) -> String {
+    let src = &config.root;
+    let mut root = json!({
+        "log": {"loglevel": "warning"},
+        "stats": {},
+        "api": {"tag": "api", "services": ["StatsService"]},
+        "policy": {"system": {"statsOutboundUplink": true, "statsOutboundDownlink": true}},
+        "inbounds": [
+            {
+                "tag": "socks", "protocol": "socks", "listen": "127.0.0.1", "port": socks_port,
+                "settings": {"auth": "noauth", "udp": true}
+            },
+            stats_inbound()
+        ],
+    });
+    let obj = root.as_object_mut().unwrap();
+    // Сохраняем dns/routing/outbounds/balancers/observatory из подписки (XHTTP, автовыбор).
+    for key in ["dns", "routing", "outbounds", "burstObservatory", "observatory"] {
+        if let Some(v) = src.get(key) {
+            obj.insert(key.to_string(), v.clone());
+        }
+    }
+    inject_api_rule(obj);
+    root.to_string()
+}
+
 /// Конфиг для прокси-пинга: локальный SOCKS-inbound + outbound под профиль, без
 /// TUN/routing (Фаза 5). Ядро поднимается, клиент гонит HTTP через SOCKS.
 #[allow(dead_code)] // используется в ping/ на Фазе 5

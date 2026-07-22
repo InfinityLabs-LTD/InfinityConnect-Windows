@@ -68,6 +68,25 @@ impl ApiClient {
         self.state.read().await.tokens.is_some()
     }
 
+    /// Фоновое обновление подписок: тянет ключи и перекачивает тела подписок
+    /// (обновляет зашифрованный кэш). Тихо игнорирует ошибки (офлайн/нет сессии).
+    /// Возвращает число обновлённых подписок.
+    pub async fn refresh_subscriptions(&self) -> usize {
+        if !self.is_authorized().await {
+            return 0;
+        }
+        let Ok(keys) = self.keys().await else { return 0 };
+        let mut n = 0;
+        for key in keys {
+            if let Some(url) = key.subscription_url.as_deref().filter(|s| !s.is_empty()) {
+                if self.subscription_body(url).await.is_ok() {
+                    n += 1;
+                }
+            }
+        }
+        n
+    }
+
     // ── Discovery ──
 
     /// Discovery по домену: `https://<domain>/v1/discovery` → base_url.
@@ -95,6 +114,20 @@ impl ApiClient {
             .base_url
             .clone()
             .ok_or_else(|| AppError::Other("api_base_url не задан: выполните discovery".into()))
+    }
+
+    /// Регистрируемый домен из base_url discovery (напр. `infinityconnect.ru`) —
+    /// корень доверия для проверки URL подписки. `None`, если discovery не было.
+    async fn trusted_domain(&self) -> Option<String> {
+        let base = self.state.read().await.base_url.clone()?;
+        let host = base
+            .trim_start_matches("https://")
+            .trim_start_matches("http://")
+            .split('/')
+            .next()?
+            .split(':')
+            .next()?;
+        registrable_domain(host)
     }
 
     // ── Auth ──
@@ -206,12 +239,12 @@ impl ApiClient {
     pub async fn keys(&self) -> AppResult<Vec<KeyDto>> {
         match self.get_auth::<KeysResponseDto>("keys").await {
             Ok(resp) => {
-                let _ = store::write_cache(store::CACHE_KEYS, &resp.keys);
+                let _ = store::write_cache_secure(store::CACHE_KEYS, &resp.keys);
                 Ok(resp.keys)
             }
             Err(e @ AppError::Network(_)) => {
                 // Офлайн: отдаём кэш, если есть.
-                if let Some(cached) = store::read_cache::<Vec<KeyDto>>(store::CACHE_KEYS) {
+                if let Some(cached) = store::read_cache_secure::<Vec<KeyDto>>(store::CACHE_KEYS) {
                     Ok(cached)
                 } else {
                     Err(e)
@@ -225,7 +258,7 @@ impl ApiClient {
     pub async fn key(&self, id: i64) -> AppResult<KeyDto> {
         match self.get_auth::<KeyDto>(&format!("keys/{id}")).await {
             Ok(k) => Ok(k),
-            Err(e @ AppError::Network(_)) => store::read_cache::<Vec<KeyDto>>(store::CACHE_KEYS)
+            Err(e @ AppError::Network(_)) => store::read_cache_secure::<Vec<KeyDto>>(store::CACHE_KEYS)
                 .and_then(|ks| ks.into_iter().find(|k| k.id == id))
                 .ok_or(e),
             Err(e) => Err(e),
@@ -247,7 +280,16 @@ impl ApiClient {
 
     /// Грузит тело подписки с заголовками клиента Happ + HWID. Кэширует на диск;
     /// при сетевой ошибке отдаёт кэш (офлайн-режим).
+    ///
+    /// **Анти-SSRF:** `url` приходит от сервера (`key.subscription_url`). Прежде чем
+    /// идти по нему, проверяем: схема https + хост принадлежит регистрируемому домену
+    /// discovery (напр. `*.infinityconnect.ru`). Иначе скомпрометированный API мог бы
+    /// заставить клиент сходить на произвольный/внутренний адрес.
     pub async fn subscription_body(&self, url: &str) -> AppResult<SubscriptionBody> {
+        let trusted = self.trusted_domain().await;
+        if !is_subscription_url_allowed(url, trusted.as_deref()) {
+            return Err(AppError::Other("недоверенный URL подписки отклонён".into()));
+        }
         let cache_name = store::subscription_cache_name(url);
         let resp = self
             .http
@@ -270,12 +312,12 @@ impl ApiClient {
                     .filter(|h| (1..=168).contains(h));
                 let raw = r.error_for_status()?.text().await?;
                 let body = SubscriptionBody { raw, update_interval_hours: interval };
-                let _ = store::write_cache(&cache_name, &body);
+                let _ = store::write_cache_secure(&cache_name, &body);
                 Ok(body)
             }
             Err(e) => {
-                // Офлайн: кэш тела подписки.
-                store::read_cache::<SubscriptionBody>(&cache_name)
+                // Офлайн: зашифрованный кэш тела подписки.
+                store::read_cache_secure::<SubscriptionBody>(&cache_name)
                     .ok_or_else(|| AppError::from(e))
             }
         }
@@ -285,4 +327,79 @@ impl ApiClient {
 /// Нормализует base_url: убирает хвостовой `/` (пути добавляем сами).
 fn normalize_base(url: &str) -> String {
     url.trim_end_matches('/').to_string()
+}
+
+/// Регистрируемый домен (последние две метки: `sub.infinityconnect.ru` →
+/// `infinityconnect.ru`). Для host из >=2 меток; иначе None.
+fn registrable_domain(host: &str) -> Option<String> {
+    let h = host.trim().trim_end_matches('.').to_lowercase();
+    if h.is_empty() || h.parse::<std::net::IpAddr>().is_ok() {
+        return None; // голый IP доменом не считаем
+    }
+    let labels: Vec<&str> = h.split('.').filter(|l| !l.is_empty()).collect();
+    if labels.len() < 2 {
+        return None;
+    }
+    Some(labels[labels.len() - 2..].join("."))
+}
+
+/// Разрешён ли URL подписки: только https + хост принадлежит доверенному
+/// регистрируемому домену (сам домен или его поддомен). `trusted=None`
+/// (discovery не было) → отклоняем на всякий случай.
+fn is_subscription_url_allowed(url: &str, trusted: Option<&str>) -> bool {
+    let Some(trusted) = trusted else { return false };
+    // Схема должна быть https.
+    let rest = match url.strip_prefix("https://") {
+        Some(r) => r,
+        None => return false,
+    };
+    // Хост — до первого '/', ':', '?', отбрасываем возможный user@ (anti-spoof).
+    let host_part = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host_part = host_part.rsplit('@').next().unwrap_or(host_part); // user@host → host
+    let host = host_part.split(':').next().unwrap_or("").to_lowercase();
+    match registrable_domain(&host) {
+        Some(reg) => reg == trusted, // домен или его поддомен (reg одинаков)
+        None => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_subscription_url_allowed, registrable_domain};
+
+    #[test]
+    fn registrable_domain_extracts_last_two_labels() {
+        assert_eq!(registrable_domain("sub.infinityconnect.ru").as_deref(), Some("infinityconnect.ru"));
+        assert_eq!(registrable_domain("infinityconnect.ru").as_deref(), Some("infinityconnect.ru"));
+        assert_eq!(registrable_domain("a.b.c.example.com").as_deref(), Some("example.com"));
+        assert_eq!(registrable_domain("localhost"), None);
+        assert_eq!(registrable_domain("169.254.169.254"), None);
+    }
+
+    #[test]
+    fn allows_subdomain_of_trusted() {
+        let t = Some("infinityconnect.ru");
+        assert!(is_subscription_url_allowed("https://sub.infinityconnect.ru/abc", t));
+        assert!(is_subscription_url_allowed("https://infinityconnect.ru/abc", t));
+        assert!(is_subscription_url_allowed("https://sub.infinityconnect.ru:8443/abc", t));
+    }
+
+    #[test]
+    fn blocks_ssrf_and_foreign_hosts() {
+        let t = Some("infinityconnect.ru");
+        // Внутренние/облачные метаданные.
+        assert!(!is_subscription_url_allowed("http://169.254.169.254/latest/meta-data", t));
+        assert!(!is_subscription_url_allowed("https://169.254.169.254/", t));
+        assert!(!is_subscription_url_allowed("https://localhost/x", t));
+        // Чужой домен.
+        assert!(!is_subscription_url_allowed("https://evil.com/x", t));
+        // Спуфинг через user@ (host = evil.com, не наш).
+        assert!(!is_subscription_url_allowed("https://sub.infinityconnect.ru@evil.com/x", t));
+        // Домен-обманка (суффикс совпадает, но регистрируемый домен другой).
+        assert!(!is_subscription_url_allowed("https://infinityconnect.ru.evil.com/x", t));
+        // Не-https.
+        assert!(!is_subscription_url_allowed("http://sub.infinityconnect.ru/x", t));
+        // Нет discovery.
+        assert!(!is_subscription_url_allowed("https://sub.infinityconnect.ru/x", None));
+    }
 }

@@ -33,7 +33,9 @@ impl XrayProcess {
             // cwd = каталог ядра: wintun.dll и geo-файлы берутся отсюда.
             .current_dir(exe_dir)
             .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            // stderr ядра → лог-файл: без него причина падения (напр. wintun
+            // «Access denied») теряется, и в UI виден только «код 1».
+            .stderr(super::core_log(exe_dir, "xray"));
         hide_window(&mut cmd);
 
         let child = cmd

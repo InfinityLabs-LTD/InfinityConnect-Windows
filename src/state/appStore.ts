@@ -17,6 +17,7 @@ type Route =
   | "settings"
   | "settings/routing"
   | "settings/ping"
+  | "settings/logs"
   | "settings/about";
 
 /** Выбранный сервер (ключ + индекс в подписке). */

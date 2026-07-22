@@ -6,6 +6,7 @@ $ErrorActionPreference = "Stop"
 
 $XrayVersion = "26.3.27"       # = Android BuildFlags.XRAY_CORE_VERSION
 $HysteriaVersion = "2.10.0"    # apernet/hysteria 2.x
+$SingboxVersion = "1.12.12"    # SagerNet/sing-box — TUN + per-app routing
 $BinDir = Join-Path $PSScriptRoot "..\src-tauri\binaries"
 $BinDir = [System.IO.Path]::GetFullPath($BinDir)
 New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
@@ -34,5 +35,17 @@ $HyUrl = "https://github.com/apernet/hysteria/releases/download/app/v$HysteriaVe
 Write-Host "Скачиваю Hysteria $HysteriaVersion..."
 Invoke-WebRequest -Uri $HyUrl -OutFile (Join-Path $BinDir "hysteria.exe")
 Write-Host "  → hysteria.exe"
+
+# --- sing-box (zip: sing-box.exe) — TUN + per-app split-tunnel в гибриде ---
+$SingboxUrl = "https://github.com/SagerNet/sing-box/releases/download/v$SingboxVersion/sing-box-$SingboxVersion-windows-amd64.zip"
+$SbZip = Join-Path $env:TEMP "sing-box-$SingboxVersion.zip"
+$SbExtract = Join-Path $env:TEMP "sing-box-$SingboxVersion"
+Write-Host "Скачиваю sing-box $SingboxVersion..."
+Invoke-WebRequest -Uri $SingboxUrl -OutFile $SbZip
+Expand-Archive -Path $SbZip -DestinationPath $SbExtract -Force
+$SbExe = Get-ChildItem -Path $SbExtract -Recurse -Filter "sing-box.exe" | Select-Object -First 1
+Copy-Item $SbExe.FullName (Join-Path $BinDir "sing-box.exe") -Force
+Write-Host "  → sing-box.exe"
+Remove-Item -Recurse -Force $SbExtract
 
 Write-Host "Готово: $BinDir"
