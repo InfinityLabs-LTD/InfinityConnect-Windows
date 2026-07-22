@@ -85,6 +85,9 @@ export const userInfo = () => invoke<UserInfo>("user_info");
 
 export const keys = () => invoke<Key[]>("keys");
 
+/** Принудительно обновить подписки (ключи + тела). Возвращает число обновлённых. */
+export const refreshSubscriptions = () => invoke<number>("refresh_subscriptions");
+
 export const keyServers = (keyId: number) =>
   invoke<SubscriptionServer[]>("key_servers", { keyId });
 

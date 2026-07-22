@@ -61,6 +61,13 @@ pub async fn keys(api: State<'_, ApiClient>) -> AppResult<Vec<KeyDto>> {
     api.keys().await
 }
 
+/// Принудительно обновляет подписки (ключи + тела, зашифрованный кэш).
+/// Вызывается кнопкой обновления в UI. Возвращает число обновлённых подписок.
+#[tauri::command]
+pub async fn refresh_subscriptions(api: State<'_, ApiClient>) -> AppResult<usize> {
+    Ok(api.refresh_subscriptions().await)
+}
+
 /// Сервер подписки для UI: имя + адрес/порт + флаг протокола. Профиль (для
 /// connect/пинга) на Фазе 1 не отдаём во фронт целиком — он останется в бэке.
 #[derive(Debug, Serialize)]

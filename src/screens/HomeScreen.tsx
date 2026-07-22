@@ -1,5 +1,5 @@
-import { useEffect } from "react";
-import { connect, disconnect, keys, keyServers, pingServer, type Key, type SubscriptionServer } from "../api/commands";
+import { useEffect, useState } from "react";
+import { connect, disconnect, keys, keyServers, pingServer, refreshSubscriptions, type Key, type SubscriptionServer } from "../api/commands";
 import { useAppStore, pingKey } from "../state/appStore";
 import { InfinityColors as C, pingColor } from "../theme/colors";
 import { formatBytes, formatSpeed } from "../util/format";
@@ -20,22 +20,29 @@ export default function HomeScreen() {
     setKeys, setServers, setPing, setSelection, setError,
   } = s;
 
+  const [refreshing, setRefreshing] = useState(false);
+
+  /** Загружает ключи и серверы из кэша/сети, восстанавливает выбор. */
+  async function loadKeys() {
+    const ks = await keys();
+    setKeys(ks);
+    for (const k of ks) {
+      try {
+        const servers = await keyServers(k.id);
+        setServers(k.id, servers);
+        if (!useAppStore.getState().selection && servers.length > 0) {
+          setSelection({ keyId: k.id, serverIndex: servers[0].index });
+        }
+      } catch {
+        /* пропускаем ключ без ответа */
+      }
+    }
+  }
+
   useEffect(() => {
     (async () => {
       try {
-        const ks = await keys();
-        setKeys(ks);
-        for (const k of ks) {
-          try {
-            const servers = await keyServers(k.id);
-            setServers(k.id, servers);
-            if (!useAppStore.getState().selection && servers.length > 0) {
-              setSelection({ keyId: k.id, serverIndex: servers[0].index });
-            }
-          } catch {
-            /* пропускаем ключ без ответа */
-          }
-        }
+        await loadKeys();
         // Автопинг всех серверов после загрузки (сериализованно на бэке).
         pingAll();
       } catch (e) {
@@ -44,6 +51,22 @@ export default function HomeScreen() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** Кнопка ↻: обновляет подписки на сервере, перечитывает ключи и пингует. */
+  async function onRefreshSubscriptions() {
+    if (refreshing) return;
+    setRefreshing(true);
+    setError(null);
+    try {
+      await refreshSubscriptions();
+      await loadKeys();
+      pingAll();
+    } catch (e) {
+      setError(errMessage(e));
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   /** Пингует все загруженные серверы по очереди (бэк сериализует proxy-замеры). */
   async function pingAll() {
@@ -112,10 +135,26 @@ export default function HomeScreen() {
       <div style={{ flex: "2 1 420px", minWidth: 340, display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Серверы</h2>
-          <button onClick={pingAll} title="Обновить пинг"
-            style={{ background: C.surface, border: `1px solid ${C.stroke}`, borderRadius: 10, padding: "7px 12px", color: C.accentBlue, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
-            ⟳ Обновить пинг
-          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={pingAll} title="Обновить пинг"
+              style={{ background: C.surface, border: `1px solid ${C.stroke}`, borderRadius: 10, padding: "7px 12px", color: C.accentBlue, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>
+              ⟳ Обновить пинг
+            </button>
+            <button onClick={onRefreshSubscriptions} disabled={refreshing}
+              title="Обновить подписки"
+              style={{
+                width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center",
+                background: C.surface, border: `1px solid ${C.stroke}`, borderRadius: "50%",
+                color: C.accentBlue, cursor: refreshing ? "default" : "pointer", fontSize: 16,
+                padding: 0, lineHeight: 1,
+              }}>
+              <span style={{
+                display: "inline-block",
+                animation: refreshing ? "ic-spin 0.8s linear infinite" : "none",
+              }}>↻</span>
+            </button>
+            <style>{"@keyframes ic-spin { to { transform: rotate(360deg); } }"}</style>
+          </div>
         </div>
         {keyList.length === 0 && <div style={{ color: C.mutedDim, fontSize: 13 }}>Нет подписок</div>}
         {keyList.map((k, i) => {
@@ -171,7 +210,8 @@ function KeyCard({ k, number, selected, onClick }: { k: Key; number: number; sel
 }
 
 function ServerRow({ server, selected, isFastest, ping, onClick }: { server: SubscriptionServer; selected: boolean; isFastest: boolean; ping: number | undefined; onClick: () => void }) {
-  const pingText = ping === undefined ? "…" : ping < 0 ? "—" : `${ping} мс`;
+  // ping: undefined — ещё не мерян; <=0 — недоступен/ошибка («—»); иначе мс.
+  const pingText = ping === undefined ? "…" : ping <= 0 ? "—" : `${ping} мс`;
   return (
     <div onClick={onClick}
       onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${C.accentBlue}8C`; e.currentTarget.style.transform = "translateX(3px)"; }}
@@ -237,7 +277,7 @@ function fastestIndex(keyId: number, servers: SubscriptionServer[], pings: Recor
   let bestMs = Infinity;
   for (const srv of servers) {
     const ms = pings[pingKey(keyId, srv.index)];
-    if (ms !== undefined && ms >= 0 && ms < bestMs) {
+    if (ms !== undefined && ms > 0 && ms < bestMs) {
       bestMs = ms;
       best = srv.index;
     }

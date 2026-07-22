@@ -93,6 +93,7 @@ pub fn run() {
             commands::is_authorized,
             commands::user_info,
             commands::keys,
+            commands::refresh_subscriptions,
             commands::key_servers,
             commands::connect,
             commands::disconnect,

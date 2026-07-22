@@ -67,9 +67,10 @@ fn icmp_echo(ip: Ipv4Addr) -> i32 {
 
         let result = if ret > 0 {
             let reply = &*(reply_buf.as_ptr() as *const ICMP_ECHO_REPLY);
-            // Status 0 = IP_SUCCESS; RoundTripTime в мс.
+            // Status 0 = IP_SUCCESS; RoundTripTime в мс (у близких узлов бывает 0 —
+            // поднимаем до 1, чтобы «0» не выглядел как «нет пинга»).
             if reply.Status == 0 {
-                reply.RoundTripTime as i32
+                (reply.RoundTripTime as i32).max(1)
             } else {
                 -1
             }

@@ -45,7 +45,7 @@ export const InfinityGradients = {
  * <100 мс — мятный, <250 — янтарный, иначе коралловый; недоступно — приглушённый.
  */
 export function pingColor(ms: number | null): string {
-  if (ms == null || ms < 0) return InfinityColors.mutedDim;
+  if (ms == null || ms <= 0) return InfinityColors.mutedDim;
   if (ms < 100) return InfinityColors.mint;
   if (ms < 250) return InfinityColors.amber;
   return InfinityColors.coral;

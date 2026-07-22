@@ -3,7 +3,7 @@
 //! HTTP через этот SOCKS выбранным методом (GET/HEAD) и режимом. RTT мс или -1.
 
 use std::io::Write;
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
@@ -14,8 +14,11 @@ use crate::engine::{xray_config, VlessConfig};
 
 use super::model::{PingMode, PingSettings};
 
-/// Пауза на подъём SOCKS-inbound перед первым запросом.
-const CORE_WARMUP: Duration = Duration::from_millis(150);
+/// Максимум ожидания готовности SOCKS-inbound ядра перед первым запросом.
+/// Порт открывается почти сразу, но VLESS-outbound к серверу — не мгновенно;
+/// ждём именно принятия соединения на SOCKS-порту, а не фиксированную паузу.
+const CORE_READY_TIMEOUT: Duration = Duration::from_millis(4000);
+const CORE_POLL: Duration = Duration::from_millis(50);
 /// Число попыток в режиме Default (берём лучшую).
 const DEFAULT_ATTEMPTS: usize = 3;
 
@@ -44,14 +47,39 @@ pub fn measure(exe_dir: &Path, config: &VlessConfig, settings: &PingSettings, he
             return -1;
         }
     };
-    std::thread::sleep(CORE_WARMUP);
 
-    let result = request_through_proxy(port, settings, head);
+    // Ждём, пока SOCKS-inbound начнёт принимать соединения (порт открыт),
+    // затем даём короткий запас на установку outbound к серверу.
+    let ready = wait_socks_ready(port);
+
+    let result = if ready {
+        request_through_proxy(port, settings, head)
+    } else {
+        -1
+    };
 
     let _ = child.kill();
     let _ = child.wait();
     let _ = std::fs::remove_file(&config_path);
     result
+}
+
+/// Ждёт, пока ядро начнёт слушать SOCKS-порт (TCP connect успешен).
+/// Возвращает false, если за таймаут порт так и не открылся.
+fn wait_socks_ready(port: u16) -> bool {
+    let addr = format!("127.0.0.1:{port}");
+    let deadline = Instant::now() + CORE_READY_TIMEOUT;
+    while Instant::now() < deadline {
+        if let Ok(sa) = addr.parse() {
+            if TcpStream::connect_timeout(&sa, CORE_POLL).is_ok() {
+                // Порт принимает соединения. Небольшой запас на прогрев маршрута.
+                std::thread::sleep(Duration::from_millis(120));
+                return true;
+            }
+        }
+        std::thread::sleep(CORE_POLL);
+    }
+    false
 }
 
 fn spawn_core(exe: &Path, exe_dir: &Path, config_path: &Path) -> std::io::Result<Child> {
@@ -115,6 +143,8 @@ fn request_through_proxy(port: u16, settings: &PingSettings, head: bool) -> i32 
 }
 
 /// Один HTTP-запрос через прокси; RTT до конца ответа в мс, либо -1.
+/// Меряем в микросекундах и округляем вверх до 1 мс: реальный сетевой RTT
+/// не бывает 0 мс, а `as_millis()` субмиллисекундные значения обнулял.
 fn single(client: &Client, url: &str, head: bool) -> i32 {
     let req = if head { client.head(url) } else { client.get(url) };
     let start = Instant::now();
@@ -124,13 +154,19 @@ fn single(client: &Client, url: &str, head: bool) -> i32 {
             // Дочитываем тело (для GET RTT включает полный ответ).
             let _ = resp.bytes();
             if (200..400).contains(&code) {
-                start.elapsed().as_millis() as i32
+                us_to_ms(start.elapsed())
             } else {
                 -1
             }
         }
         Err(_) => -1,
     }
+}
+
+/// Длительность → мс, округление вверх, минимум 1 (0 мс невозможно для сети).
+pub(super) fn us_to_ms(d: Duration) -> i32 {
+    let us = d.as_micros();
+    (((us + 999) / 1000) as i32).max(1)
 }
 
 /// Свободный локальный TCP-порт для SOCKS-inbound ядра.

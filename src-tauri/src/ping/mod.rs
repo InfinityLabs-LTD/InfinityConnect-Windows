@@ -64,12 +64,11 @@ impl Pinger {
             EngineConfig::Hysteria2(_) => return tcp_ping(config.address(), config.port()),
         };
         let _guard = self.inner.proxy_lock.lock().unwrap();
-        let ms = proxy::measure(&self.inner.exe_dir, vless, settings, head);
-        if ms >= 0 {
-            ms
-        } else {
-            tcp_ping(config.address(), config.port())
-        }
+        // Прокси-метод меряет сквозной RTT через сам сервер (VLESS). Если замер
+        // не удался — возвращаем -1 («—»), а НЕ подсовываем TCP-значение: раньше
+        // молчаливый откат на TCP давал заниженный пинг (70-130 вместо 300-500),
+        // будто GET/HEAD «быстрее» реального пути через прокси.
+        proxy::measure(&self.inner.exe_dir, vless, settings, head)
     }
 }
 
@@ -88,7 +87,7 @@ fn tcp_ping(address: &str, port: u16) -> i32 {
     for attempt in 0..(TCP_WARMUP + TCP_ATTEMPTS) {
         let start = Instant::now();
         let ok = TcpStream::connect_timeout(&addr, Duration::from_millis(TIMEOUT_MS)).is_ok();
-        let ms = if ok { start.elapsed().as_millis() as i32 } else { -1 };
+        let ms = if ok { proxy::us_to_ms(start.elapsed()) } else { -1 };
         if attempt >= TCP_WARMUP && ms >= 0 {
             samples.push(ms);
         }
@@ -122,5 +121,18 @@ mod tests {
         assert_eq!(median(&mut [30, 10, 20]), 20);
         assert_eq!(median(&mut [10, 20, 30, 40]), 25);
         assert_eq!(median(&mut []), -1);
+    }
+
+    #[test]
+    fn us_to_ms_never_zero_rounds_up() {
+        use std::time::Duration;
+        // Субмиллисекундные значения не должны обнуляться.
+        assert_eq!(proxy::us_to_ms(Duration::from_micros(1)), 1);
+        assert_eq!(proxy::us_to_ms(Duration::from_micros(500)), 1);
+        assert_eq!(proxy::us_to_ms(Duration::from_micros(1000)), 1);
+        // Округление вверх.
+        assert_eq!(proxy::us_to_ms(Duration::from_micros(1001)), 2);
+        assert_eq!(proxy::us_to_ms(Duration::from_micros(320_000)), 320);
+        assert_eq!(proxy::us_to_ms(Duration::from_micros(0)), 1);
     }
 }
