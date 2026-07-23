@@ -35,9 +35,12 @@ pub fn build(mtu: u32, routing: &RoutingSettings) -> String {
         "dns": {
             // Новый DNS-формат sing-box 1.12+ (type-based). Старый {address,detour}
             // устарел и удаляется в 1.14. Резолвим через прокси (анти-утечка), fallback direct.
+            // dns-direct — БЕЗ detour: в 1.13 `detour` на пустой direct-outbound — FATAL
+            // («detour to an empty direct outbound makes no sense»); без detour сервер
+            // и так ходит напрямую через auto_detect_interface.
             "servers": [
                 {"type": "udp", "tag": "dns-proxy", "server": "1.1.1.1", "detour": "proxy"},
-                {"type": "udp", "tag": "dns-direct", "server": "8.8.8.8", "detour": "direct"}
+                {"type": "udp", "tag": "dns-direct", "server": "8.8.8.8"}
             ],
             "final": "dns-proxy",
             "strategy": "prefer_ipv4"
