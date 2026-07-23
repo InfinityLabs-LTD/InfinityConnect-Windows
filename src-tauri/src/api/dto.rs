@@ -54,6 +54,10 @@ pub struct DiscoveryDto {
     pub api_version: Option<i32>,
     #[serde(default)]
     pub features: Option<DiscoveryFeaturesDto>,
+    /// База эндпоинта обновлений клиента (напр. `https://host/v1/client-updates`).
+    /// Если задана — updater ходит сюда вместо статического endpoint из tauri.conf.json.
+    #[serde(default)]
+    pub update_base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

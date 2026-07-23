@@ -69,6 +69,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
+        "https://infinityconnect.ru/v1/client-updates/windows/{{arch}}/latest?current={{current_version}}",
         "https://github.com/InfinityLabs-LTD/InfinityConnect-Windows/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhDNTVENkJCODU2MTAyOTQKUldTVUFtR0Z1OVpWakJiempKUzNROXlabTZTV043L0tObzdJbU0vUVBxaXhJdG1zKzRibENJbVQK"
