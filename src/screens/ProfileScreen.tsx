@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import {
-  userInfo, subscriptionInfo, supportUrl, openUrl, logout,
+  userInfo, subscriptionInfo, supportUrl, openUrl, logout, keys as fetchKeys,
   type UserInfo, type SubscriptionInfo, type Key,
 } from "../api/commands";
 import { useAppStore } from "../state/appStore";
@@ -23,6 +23,10 @@ export default function ProfileScreen() {
     userInfo().then(setUser).catch((e) => setErr(errMessage(e)));
     subscriptionInfo().then(setSub).catch(() => {/* метрики опциональны */});
     supportUrl().then(setSupport).catch(() => {});
+    // Ключи для списка сроков: если стор пуст (профиль открыт до Home) — дозагружаем.
+    if (useAppStore.getState().keys.length === 0) {
+      fetchKeys().then((ks) => useAppStore.getState().setKeys(ks)).catch(() => {});
+    }
   }, []);
 
   async function onLogout() {
@@ -68,8 +72,8 @@ export default function ProfileScreen() {
         </span>
       </div>
 
-      {/* ── Подписка: цветная левая грань + срок + метрики ── */}
-      <SubscriptionCard active={active} sub={sub} />
+      {/* ── Подписка: цветная левая грань + срок + сроки по ключам + метрики ── */}
+      <SubscriptionCard active={active} sub={sub} keys={cachedKeys} />
 
       {/* ── Аккаунт ── */}
       <div style={{ background: C.surface, border: `1px solid ${C.stroke}`, borderRadius: 20, padding: 18 }}>
@@ -106,8 +110,9 @@ export default function ProfileScreen() {
   );
 }
 
-/** Карточка подписки: статусная грань слева, «Осталось N дней», плитки метрик. */
-function SubscriptionCard({ active, sub }: { active: boolean; sub: SubscriptionInfo | null }) {
+/** Карточка подписки: статусная грань слева, «Осталось N дней», срок по
+ *  каждому ключу (🌐/👑 + имя + дни/дата), плитки метрик. */
+function SubscriptionCard({ active, sub, keys }: { active: boolean; sub: SubscriptionInfo | null; keys: Key[] }) {
   const accent = active ? C.mint : C.muted;
   const expiresAt = sub?.earliest_expiry;
   const remaining = daysUntil(expiresAt);
@@ -117,6 +122,8 @@ function SubscriptionCard({ active, sub }: { active: boolean; sub: SubscriptionI
     : remaining != null && remaining >= 0
       ? `Осталось ${remaining} ${plural(remaining, "день", "дня", "дней")}`
       : "Активна";
+
+  const activeKeys = keys.filter((k) => k.is_active && k.expires_at);
 
   return (
     <div style={{ display: "flex", background: C.surface, border: `1px solid ${C.stroke}`, borderRadius: 20, overflow: "hidden" }}>
@@ -132,7 +139,17 @@ function SubscriptionCard({ active, sub }: { active: boolean; sub: SubscriptionI
           <div style={{ color: C.muted, fontSize: 13, marginTop: 2 }}>до {formatDate(expiresAt)}</div>
         )}
 
-        <div style={{ height: 1, background: C.stroke, margin: "14px 0 12px" }} />
+        {/* Срок по каждому активному ключу. */}
+        {activeKeys.length > 0 && (
+          <>
+            <div style={{ height: 1, background: C.stroke, margin: "14px 0 4px" }} />
+            {activeKeys.map((k) => (
+              <KeyExpiryRow key={k.id} k={k} />
+            ))}
+          </>
+        )}
+
+        <div style={{ height: 1, background: C.stroke, margin: "10px 0 12px" }} />
         <div style={{ display: "flex", gap: 12 }}>
           {sub != null && <MetricTile label="Ключей" value={String(sub.keys_count)} />}
           {sub?.total_months != null && sub.total_months > 0 && (
@@ -145,6 +162,34 @@ function SubscriptionCard({ active, sub }: { active: boolean; sub: SubscriptionI
       </div>
     </div>
   );
+}
+
+/** Строка ключа: 🌐/👑 + имя слева, «N дней / до даты» справа. */
+function KeyExpiryRow({ k }: { k: Key }) {
+  const days = daysUntil(k.expires_at);
+  const name = keyDisplayName(k.name);
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+      <span style={{ fontSize: 15 }}>{k.is_premium ? "👑" : "🌐"}</span>
+      <span style={{ flex: 1, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {name}
+      </span>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
+        <b style={{ fontSize: 13.5 }}>
+          {days != null ? `${days} ${plural(days, "день", "дня", "дней")}` : "—"}
+        </b>
+        {k.expires_at && (
+          <span style={{ color: C.muted, fontSize: 11.5 }}>до {formatDate(k.expires_at)}</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Имя ключа без технического суффикса @bot.local (как на Home). */
+function keyDisplayName(name?: string): string {
+  const n = (name ?? "").trim().replace(/@[\w.-]+$/, "").trim();
+  return n || "Ключ";
 }
 
 function MetricTile({ label, value }: { label: string; value: string }) {
