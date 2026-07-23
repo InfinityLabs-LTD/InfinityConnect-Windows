@@ -43,7 +43,7 @@ interface AppState {
   setKeys: (k: Key[]) => void;
   setServers: (keyId: number, servers: SubscriptionServer[]) => void;
   setPing: (keyId: number, serverIndex: number, ms: number) => void;
-  setSelection: (s: Selection) => void;
+  setSelection: (s: Selection | null) => void;
   setError: (e: string | null) => void;
 }
 

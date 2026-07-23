@@ -5,6 +5,7 @@ import { InfinityColors as C } from "./theme/colors";
 import { MeshBackground } from "./components/MeshBackground";
 import { AppShell } from "./components/AppShell";
 import { UpdateBanner } from "./components/UpdateBanner";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import AuthScreen from "./screens/AuthScreen";
 import HomeScreen from "./screens/HomeScreen";
 import ProfileScreen from "./screens/ProfileScreen";
@@ -56,7 +57,9 @@ export default function App() {
     return (
       <>
         <MeshBackground />
-        <AuthScreen />
+        <ErrorBoundary>
+          <AuthScreen />
+        </ErrorBoundary>
       </>
     );
   }
@@ -65,7 +68,9 @@ export default function App() {
   return (
     <>
       <MeshBackground />
-      <AppShell>{renderContent(route)}</AppShell>
+      <AppShell>
+        <ErrorBoundary>{renderContent(route)}</ErrorBoundary>
+      </AppShell>
       <UpdateBanner />
     </>
   );

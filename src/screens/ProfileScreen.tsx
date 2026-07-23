@@ -16,7 +16,17 @@ export default function ProfileScreen() {
   }, []);
 
   async function onLogout() {
-    await logout();
+    // Даже если серверный logout не удался (офлайн), локально выходим:
+    // чистим состояние и возвращаемся на экран входа.
+    try {
+      await logout();
+    } catch {
+      /* игнорируем — токены всё равно чистятся на бэке, уходим на auth */
+    }
+    const s = useAppStore.getState();
+    s.setKeys([]);
+    s.setSelection(null);
+    s.setError(null);
     setRoute("auth");
   }
 
