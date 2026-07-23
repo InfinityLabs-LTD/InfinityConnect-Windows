@@ -116,15 +116,47 @@ pub fn run() {
 /// Каталог с ядром и wintun.dll. В проде — рядом с ресурсами приложения; в dev —
 /// `src-tauri/binaries`. Ядро само ищет wintun.dll в своём cwd (мы ставим cwd в этот каталог).
 fn resolve_binaries_dir(app: &tauri::AppHandle) -> std::path::PathBuf {
-    // Прод: ресурсы бандла (resources: ["binaries/*"]).
+    use std::path::PathBuf;
+    let mut tried: Vec<PathBuf> = Vec::new();
+
+    // 1. Прод (NSIS/MSI): ресурсы бандла (resources: ["binaries/*"]).
     if let Ok(res) = app.path().resource_dir() {
         let candidate = res.join("binaries");
+        tried.push(candidate.clone());
         if candidate.join("xray.exe").exists() {
             return candidate;
         }
     }
-    // Dev-фолбэк: каталог исходников.
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries")
+
+    // 2. Фолбэк для кастомного установщика: binaries/ рядом с самим exe.
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let candidate = dir.join("binaries");
+            tried.push(candidate.clone());
+            if candidate.join("xray.exe").exists() {
+                return candidate;
+            }
+        }
+    }
+
+    // 3. Dev-фолбэк: каталог исходников.
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries");
+    if dev.join("xray.exe").exists() {
+        return dev;
+    }
+    tried.push(dev.clone());
+
+    // Ничего не нашли — пишем диагностику рядом с exe и в %TEMP%.
+    let msg = format!(
+        "InfinityConnect: не найден каталог ядер (xray.exe). Проверены пути:\n{}\n",
+        tried
+            .iter()
+            .map(|p| format!("  - {}", p.display()))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let _ = std::fs::write(std::env::temp_dir().join("infinity-binaries.log"), &msg);
+    dev
 }
 
 /// Системный трей: показать окно, отключить VPN, выход. Клик по иконке — показать.

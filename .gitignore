@@ -23,3 +23,4 @@ Thumbs.db
 
 # --- Исходная иконка (генерируется в icons/) ---
 app-icon.png
+src-tauri/binaries/*_stderr.log

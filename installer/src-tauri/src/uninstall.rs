@@ -9,9 +9,19 @@ const RUN_VALUE: &str = "InfinityConnect";
 
 use crate::install::DISPLAY_NAME;
 
-/// Полное удаление. Возвращает Ok даже при частичных ошибках очистки, но
-/// логирует их — цель максимально почистить систему.
+/// Полное удаление. Возвращает Ok даже при частичных ошибках очистки.
+///
+/// Чтобы надёжно удалить и саму папку установки (включая работающий
+/// uninstall.exe), деинсталлятор сначала копирует себя в %TEMP% и
+/// перезапускается оттуда — уже temp-копия сносит всю папню целиком.
 pub fn run_uninstall() -> Result<(), String> {
+    if !running_from_temp() {
+        // Первый запуск (из папки установки): реле в temp и выходим.
+        relaunch_from_temp();
+        return Ok(());
+    }
+
+    // Мы уже в temp-копии — можно безопасно удалять всё.
     let install_dir = read_install_location();
     // Останавливаем ТОЛЬКО ядра из нашей папки установки, чтобы не задеть
     // сторонние приложения с такими же именами процессов (напр. Happ тоже
@@ -23,58 +33,125 @@ pub fn run_uninstall() -> Result<(), String> {
     remove_autostart();
     remove_registry();
     if let Some(dir) = install_dir {
-        remove_install_dir(&dir);
+        // Ждём, пока папка освободится, и удаляем целиком (uninstall.exe там
+        // больше не запущен — мы работаем из temp).
+        remove_dir_with_retries(&dir);
     }
     Ok(())
 }
 
-/// Останавливает процессы, чей исполняемый файл лежит ВНУТРИ `dir` — по PID,
-/// а не по имени. Так мы не трогаем одноимённые процессы других приложений.
+/// Признак: запущены ли мы из %TEMP% (реле-копия).
+fn running_from_temp() -> bool {
+    match std::env::current_exe() {
+        Ok(exe) => {
+            let tmp = std::env::temp_dir();
+            exe.starts_with(&tmp)
+        }
+        Err(_) => false,
+    }
+}
+
+/// Копирует себя в %TEMP% и запускает оттуда с --uninstall, затем текущий
+/// процесс завершается (освобождая папку установки).
+fn relaunch_from_temp() {
+    let Ok(cur) = std::env::current_exe() else { return };
+    let tmp = std::env::temp_dir().join("infinity-uninstall.exe");
+    if std::fs::copy(&cur, &tmp).is_err() {
+        // Не смогли скопировать — удаляем как есть (папка может частично остаться).
+        let install_dir = read_install_location();
+        stop_shortcuts_registry(&install_dir);
+        if let Some(dir) = install_dir {
+            remove_dir_with_retries(&dir);
+        }
+        return;
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new(&tmp)
+            .arg("--uninstall")
+            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+            .spawn();
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = std::process::Command::new(&tmp).arg("--uninstall").spawn();
+    }
+}
+
+/// Общая очистка ярлыков/реестра/автозапуска (используется в аварийной ветке).
+fn stop_shortcuts_registry(install_dir: &Option<PathBuf>) {
+    if let Some(ref dir) = install_dir {
+        stop_cores_in_dir(dir);
+    }
+    remove_shortcuts();
+    remove_autostart();
+    remove_registry();
+}
+
+/// Удаляет каталог целиком с несколькими попытками (файлы могут освобождаться
+/// не мгновенно после остановки процессов).
+fn remove_dir_with_retries(dir: &Path) {
+    for _ in 0..15 {
+        if !dir.exists() {
+            return;
+        }
+        let _ = std::fs::remove_dir_all(dir);
+        if !dir.exists() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(400));
+    }
+}
+
+/// Останавливает ВСЕ процессы, чей исполняемый файл лежит ВНУТРИ `dir` — по пути,
+/// а не по имени (чтобы не задеть одноимённые процессы других приложений, напр.
+/// Happ). Использует PowerShell CIM (надёжнее устаревшего wmic) и ждёт, пока
+/// процессы реально завершатся, иначе папка не удалится.
+pub(crate) fn stop_cores_in_dir_pub(dir: &Path) {
+    stop_cores_in_dir(dir);
+}
+
 #[cfg(windows)]
 fn stop_cores_in_dir(dir: &Path) {
-    let names = ["sing-box.exe", "xray.exe", "hysteria.exe", "infinity-connect.exe"];
-    for name in names {
-        // WMIC: получаем PID и путь по имени, фильтруем по нашей папке.
-        let out = std::process::Command::new("wmic")
-            .args([
-                "process",
-                "where",
-                &format!("name='{name}'"),
-                "get",
-                "ProcessId,ExecutablePath",
-                "/format:csv",
-            ])
-            .output();
-        let Ok(out) = out else { continue };
-        let text = String::from_utf8_lossy(&out.stdout);
-        let dir_lc = dir.to_string_lossy().to_lowercase();
-        for line in text.lines() {
-            // Строка CSV: Node,ExecutablePath,ProcessId
-            let cols: Vec<&str> = line.split(',').collect();
-            if cols.len() < 3 {
-                continue;
-            }
-            let path = cols[1].trim();
-            let pid = cols[2].trim();
-            if path.to_lowercase().starts_with(&dir_lc) && pid.parse::<u32>().is_ok() {
-                let _ = std::process::Command::new("taskkill")
-                    .args(["/F", "/PID", pid, "/T"])
-                    .output();
-            }
-        }
-    }
+    use std::os::windows::process::CommandExt;
+    let dir_s = dir.to_string_lossy().replace('\'', "''");
+    // Убиваем все процессы, чей ExecutablePath начинается с папки установки,
+    // затем ждём их завершения (до ~6с).
+    let ps = format!(
+        "$d='{dir_s}'; \
+         for ($i=0; $i -lt 15; $i++) {{ \
+           $p = Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -and $_.ExecutablePath.StartsWith($d, [System.StringComparison]::OrdinalIgnoreCase) }}; \
+           if (-not $p) {{ break }}; \
+           $p | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }}; \
+           Start-Sleep -Milliseconds 400 \
+         }}"
+    );
+    let _ = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &ps])
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+        .output();
 }
 
 #[cfg(not(windows))]
 fn stop_cores_in_dir(_dir: &Path) {}
 
 fn remove_shortcuts() {
-    if let Some(programs) = dirs::data_dir().map(|d| d.join(r"Microsoft\Windows\Start Menu\Programs")) {
-        let _ = std::fs::remove_file(programs.join(format!("{DISPLAY_NAME}.lnk")));
-    }
-    if let Some(desktop) = dirs::desktop_dir() {
-        let _ = std::fs::remove_file(desktop.join(format!("{DISPLAY_NAME}.lnk")));
-    }
+    // Пути ДОЛЖНЫ совпадать с install.rs: общесистемное меню Пуск (%ProgramData%)
+    // и общий рабочий стол (%PUBLIC%), а не профиль текущего (админ) пользователя.
+    let program_data = std::env::var("ProgramData")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(r"C:\ProgramData"));
+    let start_menu = program_data
+        .join(r"Microsoft\Windows\Start Menu\Programs")
+        .join(format!("{DISPLAY_NAME}.lnk"));
+    let _ = std::fs::remove_file(&start_menu);
+
+    let public = std::env::var("PUBLIC")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from(r"C:\Users\Public"));
+    let desktop = public.join("Desktop").join(format!("{DISPLAY_NAME}.lnk"));
+    let _ = std::fs::remove_file(&desktop);
 }
 
 #[cfg(windows)]
@@ -120,49 +197,3 @@ fn remove_registry() {
 #[cfg(not(windows))]
 fn remove_registry() {}
 
-/// Удаляет каталог установки. Себя (uninstall.exe) удалить сразу нельзя —
-/// планируем удаление через отложенный `cmd` после выхода процесса.
-fn remove_install_dir(dir: &Path) {
-    // Пытаемся удалить всё, кроме работающего uninstall.exe.
-    if let Ok(rd) = std::fs::read_dir(dir) {
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.file_name().map(|n| n == "uninstall.exe").unwrap_or(false) {
-                continue;
-            }
-            if p.is_dir() {
-                let _ = std::fs::remove_dir_all(&p);
-            } else {
-                let _ = std::fs::remove_file(&p);
-            }
-        }
-    }
-    // Отложенно удаляем сам каталог (с uninstall.exe) после выхода.
-    schedule_self_delete(dir);
-}
-
-/// Планирует удаление каталога установки после завершения текущего процесса.
-/// Наш uninstall.exe держит себя открытым, пока не выйдет, поэтому cmd в цикле
-/// ждёт освобождения (несколько попыток), затем удаляет каталог целиком.
-fn schedule_self_delete(dir: &Path) {
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        let dir_s = dir.to_string_lossy().to_string();
-        // Ждём ~2с (даём процессу выйти), затем до 10 попыток rmdir с паузой.
-        // Так надёжно удаляется и сам uninstall.exe.
-        let cmd = format!(
-            "timeout /t 2 /nobreak >nul & \
-             for /L %i in (1,1,10) do (rmdir /s /q \"{dir_s}\" 2>nul & \
-             if not exist \"{dir_s}\" exit & timeout /t 1 /nobreak >nul)"
-        );
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", &cmd])
-            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
-            .spawn();
-    }
-    #[cfg(not(windows))]
-    {
-        let _ = std::fs::remove_dir_all(dir);
-    }
-}

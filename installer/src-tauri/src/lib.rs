@@ -82,8 +82,16 @@ fn program_files() -> PathBuf {
 pub fn run() {
     let args: Vec<String> = std::env::args().collect();
 
-    // Режим удаления — без GUI.
-    if args.iter().any(|a| a == "--uninstall") {
+    // Режим удаления. Срабатывает по флагу --uninstall ИЛИ если exe называется
+    // uninstall.exe (надёжнее: «Программы и компоненты» и двойной клик по
+    // uninstall.exe всегда ведут к удалению, а не к запуску установщика).
+    let is_uninstaller = args.iter().any(|a| a == "--uninstall")
+        || std::env::current_exe()
+            .ok()
+            .and_then(|p| p.file_name().map(|n| n.to_ascii_lowercase()))
+            .map(|n| n == "uninstall.exe")
+            .unwrap_or(false);
+    if is_uninstaller {
         let _ = uninstall::run_uninstall();
         return;
     }

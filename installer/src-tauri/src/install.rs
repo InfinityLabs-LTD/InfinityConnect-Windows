@@ -104,6 +104,15 @@ pub fn run_install(sink: Sink<'_>, opts: &InstallOptions) -> InstallResult {
     let src = payload_dir().ok_or_else(|| {
         "Не найдены файлы приложения (payload). В сборке они кладутся рядом с установщиком.".to_string()
     })?;
+
+    // Переустановка/обновление: чистим старое содержимое целевой папки, чтобы не
+    // оставались файлы прежних версий. Сначала глушим процессы из этой папки
+    // (по пути, чужие ядра не трогаем), затем удаляем всё, кроме самого
+    // работающего установщика, если он вдруг оттуда запущен.
+    if target.exists() {
+        stop_processes_in_dir(&target);
+        clear_dir_contents(&target);
+    }
     std::fs::create_dir_all(&target).map_err(|e| format!("Не удалось создать папку установки: {e}"))?;
 
     rep.step(0.25, "Копирование файлов приложения…", "Начато копирование");
@@ -156,6 +165,26 @@ mod tests {
         let _ = dir_size_kb(&dst);
 
         let _ = std::fs::remove_dir_all(&base);
+    }
+}
+
+/// Останавливает процессы, запущенные из папки установки (по пути).
+fn stop_processes_in_dir(dir: &Path) {
+    crate::uninstall::stop_cores_in_dir_pub(dir);
+}
+
+/// Удаляет всё содержимое папки (для чистой переустановки). Занятые файлы
+/// пропускаются молча — их перезапишет копирование.
+fn clear_dir_contents(dir: &Path) {
+    if let Ok(rd) = std::fs::read_dir(dir) {
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                let _ = std::fs::remove_dir_all(&p);
+            } else {
+                let _ = std::fs::remove_file(&p);
+            }
+        }
     }
 }
 
