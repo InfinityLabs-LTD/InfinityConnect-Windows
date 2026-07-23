@@ -32,6 +32,8 @@ pub fn run_uninstall() -> Result<(), String> {
     remove_shortcuts();
     remove_autostart();
     remove_registry();
+    remove_protocol();
+    remove_app_data();
     if let Some(dir) = install_dir {
         // Ждём, пока папка освободится, и удаляем целиком (uninstall.exe там
         // больше не запущен — мы работаем из temp).
@@ -196,4 +198,69 @@ fn remove_registry() {
 
 #[cfg(not(windows))]
 fn remove_registry() {}
+
+/// Удаляет регистрацию deep-link схемы `infinityconnect://`, которую приложение
+/// прописывает в реестр текущего пользователя при первом запуске.
+#[cfg(windows)]
+fn remove_protocol() {
+    use winreg::enums::*;
+    use winreg::RegKey;
+    // Текущий (админский) профиль.
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    let _ = hkcu.delete_subkey_all(r"Software\Classes\infinityconnect");
+    // Схему регистрирует не-elevated приложение в HKCU ПОЛЬЗОВАТЕЛЯ. Под elevated
+    // деинсталлятором это другой профиль — проходим все загруженные кусты HKEY_USERS.
+    let hku = RegKey::predef(HKEY_USERS);
+    if let Ok(sids) = hku.enum_keys().collect::<Result<Vec<_>, _>>() {
+        for sid in sids {
+            if sid.ends_with("_Classes") {
+                continue; // виртуальный класс-куст, реальный — в <sid>\Software\Classes
+            }
+            let path = format!(r"{sid}\Software\Classes\infinityconnect");
+            let _ = hku.delete_subkey_all(&path);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn remove_protocol() {}
+
+/// Удаляет пользовательские данные приложения (`%APPDATA%\InfinityConnect\`):
+/// зашифрованные токены, кэши discovery/ключей/подписок. Для удаления «под чистую».
+///
+/// Деинсталлятор работает elevated, поэтому `dirs::config_dir()` дал бы APPDATA
+/// АДМИНА, а данные пишет не-elevated приложение в профиль ПОЛЬЗОВАТЕЛЯ. Поэтому
+/// чистим InfinityConnect во всех профилях: `C:\Users\*\AppData\Roaming\`.
+#[cfg(windows)]
+fn remove_app_data() {
+    // На всякий случай — и профиль текущего процесса (админ).
+    if let Some(base) = dirs::config_dir() {
+        let dir = base.join("InfinityConnect");
+        if dir.is_dir() {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+    // И все пользовательские профили под C:\Users.
+    let users = std::env::var("SystemDrive")
+        .map(|d| PathBuf::from(format!("{d}\\Users")))
+        .unwrap_or_else(|_| PathBuf::from(r"C:\Users"));
+    if let Ok(entries) = std::fs::read_dir(&users) {
+        for e in entries.flatten() {
+            let dir = e.path().join(r"AppData\Roaming\InfinityConnect");
+            if dir.is_dir() {
+                let _ = std::fs::remove_dir_all(&dir);
+            }
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn remove_app_data() {
+    if let Some(base) = dirs::config_dir() {
+        let dir = base.join("InfinityConnect");
+        if dir.is_dir() {
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+}
 
