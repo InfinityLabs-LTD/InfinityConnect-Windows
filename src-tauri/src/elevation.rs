@@ -30,6 +30,10 @@ pub fn is_elevated() -> bool {
 
 /// Перезапускает текущий исполняемый файл с запросом элевации (UAC-диалог).
 /// Возвращает true, если элевированный процесс успешно запущен.
+///
+/// ВАЖНО: пробрасываем аргументы запуска (`argv[1..]`) в элевированную копию —
+/// иначе теряется deep-link URL (`infinityconnect://auth?code=…`), с которым
+/// Windows запустил не-элевированный процесс, и вход через сайт «зависает».
 #[cfg(windows)]
 pub fn relaunch_elevated() -> bool {
     use windows::core::HSTRING;
@@ -42,12 +46,23 @@ pub fn relaunch_elevated() -> bool {
     let exe = HSTRING::from(exe.as_os_str());
     let verb = HSTRING::from("runas"); // запрос элевации
 
+    // Собираем аргументы (кроме argv[0] — пути к exe) в командную строку.
+    // Каждый аргумент в кавычках, внутренние кавычки экранируем.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let params = args
+        .iter()
+        .map(|a| format!("\"{}\"", a.replace('"', "\\\"")))
+        .collect::<Vec<_>>()
+        .join(" ");
+    // Пустая строка эквивалентна отсутствию параметров (как раньше было None).
+    let params_h = HSTRING::from(params.as_str());
+
     unsafe {
         let result = ShellExecuteW(
             None,
             &verb,
             &exe,
-            None,
+            &params_h,
             None,
             SW_SHOWNORMAL,
         );

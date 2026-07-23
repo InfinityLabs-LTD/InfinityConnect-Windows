@@ -37,6 +37,13 @@ pub async fn login(login: String, password: String, api: State<'_, ApiClient>) -
     api.login(&login, &password).await
 }
 
+/// Забирает (и очищает) результат desktop-авторизации, если deep-link уже
+/// обработан до подписки фронта на событие. None — результата ещё нет.
+#[tauri::command]
+pub fn take_auth_result(slot: State<'_, crate::AuthResultSlot>) -> Option<serde_json::Value> {
+    slot.0.lock().ok().and_then(|mut g| g.take())
+}
+
 /// URL страницы desktop-входа на сайте (site_url из discovery + /auth/desktop).
 /// None — discovery ещё не было или сайт не задан (кнопку скрыть).
 #[tauri::command]

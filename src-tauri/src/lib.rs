@@ -40,12 +40,11 @@ pub fn run() {
     tauri::Builder::default()
         // Single-instance ДОЛЖЕН быть первым плагином: повторный запуск (в т.ч.
         // по deep-link infinityconnect://…) передаёт argv сюда и завершается.
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Просто фокусируем окно. Deep-link второго экземпляра доставит сам
+            // deep-link плагин через on_open_url (feature "deep-link" у
+            // single-instance), поэтому argv тут парсить не нужно.
             show_main(app);
-            // Deep-link приходит аргументом ко второму экземпляру.
-            if let Some(url) = args.iter().find(|a| a.starts_with("infinityconnect://")) {
-                handle_deep_link(app.clone(), url.clone());
-            }
         }))
         .plugin(tauri_plugin_deep_link::init())
         // Автозапуск с ОС (в трее). Аргументы запуска — пусто.
@@ -58,6 +57,8 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         // Общий HTTP-клиент к серверу (discovery/токены восстанавливаются из кэша).
         .manage(ApiClient::new())
+        // Слот для последнего результата desktop-авторизации (гонка emit/listen).
+        .manage(AuthResultSlot::default())
         .setup(|app| {
             build_tray(app.handle())?;
 
@@ -119,6 +120,7 @@ pub fn run() {
             commands::subscription_info,
             commands::support_url,
             commands::site_auth_url,
+            commands::take_auth_result,
             commands::open_url,
             commands::keys,
             commands::refresh_subscriptions,
@@ -154,9 +156,19 @@ fn handle_deep_link(app: tauri::AppHandle, url: String) {
             Ok(()) => serde_json::json!({ "ok": true }),
             Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
         };
+        // Сохраняем результат ДО эмита: если фронт ещё не подписался (окно только
+        // что показано по deep-link), он заберёт результат командой при монтировании.
+        if let Some(slot) = app.try_state::<AuthResultSlot>() {
+            *slot.0.lock().unwrap() = Some(payload.clone());
+        }
         let _ = app.emit("auth://result", payload);
     });
 }
+
+/// Последний результат desktop-авторизации — на случай гонки emit/listen
+/// (deep-link поднял окно, фронт ещё не успел повесить слушатель).
+#[derive(Default)]
+pub struct AuthResultSlot(pub std::sync::Mutex<Option<serde_json::Value>>);
 
 /// Извлекает `code` из `infinityconnect://auth?code=…`. None — не auth-ссылка.
 fn parse_auth_code(url: &str) -> Option<String> {

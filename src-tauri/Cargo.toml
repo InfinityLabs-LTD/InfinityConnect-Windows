@@ -29,7 +29,9 @@ base64 = "0.22"
 # Каталоги %APPDATA% и т.п.
 dirs = "5"
 tauri-plugin-deep-link = "2.4.9"
-tauri-plugin-single-instance = "2.4.3"
+# feature "deep-link" ОБЯЗАТЕЛЬНА: без неё single-instance на Windows не
+# передаёт deep-link URL в argv колбэка (второй экземпляр молча закрывается).
+tauri-plugin-single-instance = { version = "2.4.3", features = ["deep-link"] }
 
 # Windows-специфика: DPAPI (шифрование токенов), MachineGuid (HWID), версия ОС.
 [target.'cfg(windows)'.dependencies]

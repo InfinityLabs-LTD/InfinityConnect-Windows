@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { discover, listenAuthResult, login, openUrl, siteAuthUrl } from "../api/commands";
+import { discover, errMessage, listenAuthResult, login, openUrl, siteAuthUrl, takeAuthResult } from "../api/commands";
 import { useAppStore } from "../state/appStore";
 import { InfinityColors as C, InfinityGradients as G } from "../theme/colors";
 import logo from "../assets/logo.png";
@@ -19,7 +19,7 @@ export default function AuthScreen() {
   // Результат входа через сайт: Rust ловит infinityconnect://auth?code=…,
   // меняет код на токены и эмитит auth://result.
   useEffect(() => {
-    const un = listenAuthResult((e) => {
+    function apply(e: { ok: boolean; error?: string }) {
       setWaitingSite(false);
       if (e.ok) {
         setError(null);
@@ -27,7 +27,11 @@ export default function AuthScreen() {
       } else {
         setError(e.error ?? "Не удалось войти через сайт");
       }
-    });
+    }
+    const un = listenAuthResult(apply);
+    // Deep-link мог подняться ДО того, как встал слушатель (холодный старт по
+    // ссылке) — забираем уже готовый результат из бэка, если он есть.
+    takeAuthResult().then((r) => { if (r) apply(r); }).catch(() => {});
     return () => {
       un.then((f) => f());
     };
@@ -106,7 +110,3 @@ function Field({ placeholder, value, onChange, type = "text" }: { placeholder: s
 }
 
 const FONT = "Segoe UI, system-ui, sans-serif";
-function errMessage(e: unknown): string {
-  if (e && typeof e === "object" && "message" in e) return String((e as { message?: string }).message ?? "Ошибка");
-  return String(e);
-}
