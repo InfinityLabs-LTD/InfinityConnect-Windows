@@ -37,14 +37,26 @@ use crate::tunnel::TunnelManager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // UIPI: приложение работает elevated (нужно для TUN), а deep-link запускает
+    // НЕ-elevated процесс, который шлёт URL живому экземпляру через WM_COPYDATA
+    // (механизм single-instance). По умолчанию Windows блокирует сообщения от
+    // процессов с меньшим integrity level → deep-link не доходил. Разрешаем приём
+    // WM_COPYDATA/WM_COPYGLOBALDATA на уровне процесса.
+    #[cfg(windows)]
+    allow_cross_integrity_messages();
+
     tauri::Builder::default()
         // Single-instance ДОЛЖЕН быть первым плагином: повторный запуск (в т.ч.
         // по deep-link infinityconnect://…) передаёт argv сюда и завершается.
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // Просто фокусируем окно. Deep-link второго экземпляра доставит сам
-            // deep-link плагин через on_open_url (feature "deep-link" у
-            // single-instance), поэтому argv тут парсить не нужно.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             show_main(app);
+            // Deep-link второго экземпляра приходит сюда аргументом (single-instance
+            // шлёт argv живому процессу через WM_COPYDATA).
+            for a in &args {
+                if a.starts_with("infinityconnect://") {
+                    handle_deep_link(app.clone(), a.clone());
+                }
+            }
         }))
         .plugin(tauri_plugin_deep_link::init())
         // Автозапуск с ОС (в трее). Аргументы запуска — пусто.
@@ -143,11 +155,48 @@ pub fn run() {
         .expect("ошибка запуска InfinityConnect");
 }
 
+/// Разрешает elevated-процессу принимать WM_COPYDATA от процессов с меньшим
+/// integrity level (иначе UIPI молча их отбрасывает, ломая доставку deep-link
+/// через single-instance). Действует на все окна процесса.
+#[cfg(windows)]
+fn allow_cross_integrity_messages() {
+    use windows::Win32::UI::WindowsAndMessaging::{
+        ChangeWindowMessageFilter, MSGFLT_ADD, WM_COPYDATA,
+    };
+    // WM_COPYGLOBALDATA = 0x0049 (нет константы в crate) — тоже нужен для копирования.
+    const WM_COPYGLOBALDATA: u32 = 0x0049;
+    unsafe {
+        let _ = ChangeWindowMessageFilter(WM_COPYDATA, MSGFLT_ADD);
+        let _ = ChangeWindowMessageFilter(WM_COPYGLOBALDATA, MSGFLT_ADD);
+    }
+}
+
+/// true — код ещё не обрабатывался (можно менять на токены). Одна deep-link
+/// ссылка на Windows приходит дважды (single-instance callback + on_open_url);
+/// глушим повтор, чтобы не гасить одноразовый код дважды.
+fn claim_auth_code(code: &str) -> bool {
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
+    static LAST: OnceLock<Mutex<Option<String>>> = OnceLock::new();
+    let mut guard = LAST.get_or_init(|| Mutex::new(None)).lock().unwrap();
+    if guard.as_deref() == Some(code) {
+        return false;
+    }
+    *guard = Some(code.to_string());
+    true
+}
+
 /// Обрабатывает deep-link `infinityconnect://auth?code=…`: меняет одноразовый
 /// код на токены через API и эмитит фронту `auth://result` (ok | текст ошибки).
 fn handle_deep_link(app: tauri::AppHandle, url: String) {
     // Интересует только auth-колбэк; прочие ссылки молча игнорируем.
     let Some(code) = parse_auth_code(&url) else { return };
+    // Дедупликация: одна ссылка приходит и в single-instance callback, и в
+    // on_open_url. Код одноразовый — второй обмен провалится и перезатрёт успех
+    // ошибкой. Обрабатываем каждый код ровно один раз.
+    if !claim_auth_code(&code) {
+        return;
+    }
     show_main(&app);
     tauri::async_runtime::spawn(async move {
         use tauri::Emitter;
