@@ -99,6 +99,19 @@ export const subscriptionInfo = () => invoke<SubscriptionInfo>("subscription_inf
 /** URL поддержки из discovery; null — кнопку не показывать. */
 export const supportUrl = () => invoke<string | null>("support_url");
 
+/** URL страницы desktop-входа на сайте; null — кнопку «через сайт» скрыть. */
+export const siteAuthUrl = () => invoke<string | null>("site_auth_url");
+
+/** Результат авторизации через сайт (deep-link → обмен кода в Rust). */
+export interface AuthResultEvent {
+  ok: boolean;
+  error?: string;
+}
+
+/** Подписка на результат входа через сайт (`auth://result`). */
+export const listenAuthResult = (cb: (e: AuthResultEvent) => void): Promise<UnlistenFn> =>
+  listen<AuthResultEvent>("auth://result", (e) => cb(e.payload));
+
 /** Открыть http(s)-ссылку в браузере по умолчанию. */
 export const openUrl = (url: string) => invoke<void>("open_url", { url });
 

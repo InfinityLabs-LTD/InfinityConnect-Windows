@@ -67,6 +67,11 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["infinityconnect"]
+      }
+    },
     "updater": {
       "endpoints": [
         "https://infinityconnect.ru/v1/client-updates/windows/{{arch}}/latest?current={{current_version}}",

@@ -37,6 +37,13 @@ pub async fn login(login: String, password: String, api: State<'_, ApiClient>) -
     api.login(&login, &password).await
 }
 
+/// URL страницы desktop-входа на сайте (site_url из discovery + /auth/desktop).
+/// None — discovery ещё не было или сайт не задан (кнопку скрыть).
+#[tauri::command]
+pub async fn site_auth_url(api: State<'_, ApiClient>) -> AppResult<Option<String>> {
+    Ok(api.site_auth_url())
+}
+
 /// Разлогин: чистит токены.
 #[tauri::command]
 pub async fn logout(api: State<'_, ApiClient>) -> AppResult<()> {

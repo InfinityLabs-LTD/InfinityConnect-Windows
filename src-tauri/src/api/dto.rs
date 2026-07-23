@@ -81,6 +81,12 @@ pub struct RefreshRequestDto {
     pub refresh_token: String,
 }
 
+/// Запрос обмена одноразового кода (auth через сайт, deep-link) на токены.
+#[derive(Debug, Serialize)]
+pub struct ExchangeCodeRequestDto {
+    pub code: String,
+}
+
 /// Ответ login/refresh: пара HMAC-подписанных токенов (access ~1ч, refresh ~30д).
 /// Поля срока — для проактивного refresh на след. фазах (пока не читаются).
 #[derive(Debug, Clone, Deserialize)]

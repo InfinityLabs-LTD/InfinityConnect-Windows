@@ -151,6 +151,29 @@ impl ApiClient {
         self.set_tokens(dto.access_token, dto.refresh_token).await
     }
 
+    /// Обмен одноразового кода (auth через сайт → deep-link) на пару токенов.
+    /// Код короткоживущий и одноразовый — выдаёт его сайт после входа.
+    pub async fn exchange_auth_code(&self, code: &str) -> AppResult<()> {
+        let base = self.base().await?;
+        let dto: TokenResponseDto = self
+            .http
+            .post(format!("{base}/auth/desktop/exchange"))
+            .json(&ExchangeCodeRequestDto { code: code.to_string() })
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        self.set_tokens(dto.access_token, dto.refresh_token).await
+    }
+
+    /// URL страницы входа на сайте для desktop-авторизации (deep-link возврат).
+    /// База — site_url из discovery-кэша; None, если discovery ещё не было.
+    pub fn site_auth_url(&self) -> Option<String> {
+        let site = store::read_cache::<DiscoveryDto>(store::CACHE_DISCOVERY)?.site_url?;
+        Some(format!("{}/auth/desktop", site.trim_end_matches('/')))
+    }
+
     /// Разлогин: чистит токены локально (+ best-effort вызов сервера).
     pub async fn logout(&self) -> AppResult<()> {
         if let Ok(base) = self.base().await {

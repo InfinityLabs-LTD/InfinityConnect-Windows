@@ -38,6 +38,16 @@ use crate::tunnel::TunnelManager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // Single-instance ДОЛЖЕН быть первым плагином: повторный запуск (в т.ч.
+        // по deep-link infinityconnect://…) передаёт argv сюда и завершается.
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            show_main(app);
+            // Deep-link приходит аргументом ко второму экземпляру.
+            if let Some(url) = args.iter().find(|a| a.starts_with("infinityconnect://")) {
+                handle_deep_link(app.clone(), url.clone());
+            }
+        }))
+        .plugin(tauri_plugin_deep_link::init())
         // Автозапуск с ОС (в трее). Аргументы запуска — пусто.
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -50,6 +60,20 @@ pub fn run() {
         .manage(ApiClient::new())
         .setup(|app| {
             build_tray(app.handle())?;
+
+            // Регистрируем схему infinityconnect:// в реестре текущего пользователя
+            // (runtime-регистрация надёжнее на Windows: работает и без инсталлера).
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let _ = app.deep_link().register("infinityconnect");
+                // Deep-link, пришедший в ЭТОТ экземпляр (первый запуск по ссылке).
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for url in event.urls() {
+                        handle_deep_link(handle.clone(), url.to_string());
+                    }
+                });
+            }
 
             // Каталог с xray.exe/wintun.dll/geo-файлами (bundled resources).
             // В dev — src-tauri/binaries; в проде — resource_dir/binaries.
@@ -94,6 +118,7 @@ pub fn run() {
             commands::user_info,
             commands::subscription_info,
             commands::support_url,
+            commands::site_auth_url,
             commands::open_url,
             commands::keys,
             commands::refresh_subscriptions,
@@ -114,6 +139,57 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("ошибка запуска InfinityConnect");
+}
+
+/// Обрабатывает deep-link `infinityconnect://auth?code=…`: меняет одноразовый
+/// код на токены через API и эмитит фронту `auth://result` (ok | текст ошибки).
+fn handle_deep_link(app: tauri::AppHandle, url: String) {
+    // Интересует только auth-колбэк; прочие ссылки молча игнорируем.
+    let Some(code) = parse_auth_code(&url) else { return };
+    show_main(&app);
+    tauri::async_runtime::spawn(async move {
+        use tauri::Emitter;
+        let api = app.state::<ApiClient>().inner().clone();
+        let payload = match api.exchange_auth_code(&code).await {
+            Ok(()) => serde_json::json!({ "ok": true }),
+            Err(e) => serde_json::json!({ "ok": false, "error": e.to_string() }),
+        };
+        let _ = app.emit("auth://result", payload);
+    });
+}
+
+/// Извлекает `code` из `infinityconnect://auth?code=…`. None — не auth-ссылка.
+fn parse_auth_code(url: &str) -> Option<String> {
+    let rest = url.strip_prefix("infinityconnect://")?;
+    // Хост-часть может быть "auth" или "auth/" (браузеры добавляют слэш).
+    let (host, query) = rest.split_once('?')?;
+    if host.trim_end_matches('/') != "auth" {
+        return None;
+    }
+    query
+        .split('&')
+        .find_map(|kv| kv.strip_prefix("code="))
+        .map(|c| c.trim().to_string())
+        .filter(|c| !c.is_empty() && c.len() <= 256 && c.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_'))
+}
+
+#[cfg(test)]
+mod deep_link_tests {
+    use super::parse_auth_code;
+
+    #[test]
+    fn parses_auth_code() {
+        assert_eq!(parse_auth_code("infinityconnect://auth?code=abc-123_X").as_deref(), Some("abc-123_X"));
+        assert_eq!(parse_auth_code("infinityconnect://auth/?code=zzz&x=1").as_deref(), Some("zzz"));
+    }
+
+    #[test]
+    fn rejects_non_auth_and_bad_codes() {
+        assert_eq!(parse_auth_code("infinityconnect://other?code=abc"), None);
+        assert_eq!(parse_auth_code("infinityconnect://auth?code="), None);
+        assert_eq!(parse_auth_code("infinityconnect://auth?code=with space"), None);
+        assert_eq!(parse_auth_code("https://evil/auth?code=abc"), None);
+    }
 }
 
 /// Каталог с ядром и wintun.dll. В проде — рядом с ресурсами приложения; в dev —
