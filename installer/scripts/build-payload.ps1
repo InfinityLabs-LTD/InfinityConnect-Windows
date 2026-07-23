@@ -50,3 +50,13 @@ if (Test-Path $resources) {
 
 $size = [math]::Round((Get-ChildItem $payload -Recurse -File | Measure-Object Length -Sum).Sum / 1MB, 1)
 Write-Host "Payload готов: $payload ($size MB)"
+
+# Пакуем payload в ZIP для встраивания в single-file установщик (include_bytes!).
+# build.rs подхватит installer/payload.zip и вошьёт в infinity-setup.exe.
+$zip = Join-Path $repo "installer\payload.zip"
+if (Test-Path $zip) { Remove-Item $zip -Force }
+Write-Host "Упаковка payload.zip…"
+# Содержимое payload/* в корень архива (без папки payload сверху).
+Compress-Archive -Path (Join-Path $payload "*") -DestinationPath $zip -CompressionLevel Optimal
+$zsize = [math]::Round((Get-Item $zip).Length / 1MB, 1)
+Write-Host "payload.zip готов: $zip ($zsize MB)"

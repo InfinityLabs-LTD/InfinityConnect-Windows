@@ -72,11 +72,22 @@ impl<'a> Reporter<'a> {
     }
 }
 
+/// Payload, вшитый в бинарь установщика (single-file дистрибутив). Пустой в
+/// dev-сборке без installer/payload.zip — тогда берём папку payload/ рядом.
+static EMBEDDED_PAYLOAD_ZIP: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/payload.zip"));
+
 /// Каталог с файлами приложения, которые нужно скопировать (payload).
-/// В dev — `payload/` рядом с exe установщика или в корне проекта установщика;
-/// в проде (этап 4) CI кладёт файлы туда же рядом с exe.
+///
+/// Прод (single-file): payload вшит в exe как ZIP — распаковываем во временную
+/// папку и отдаём её. Dev: `payload/` рядом с exe или в корне проекта установщика.
 pub fn payload_dir() -> Option<PathBuf> {
-    // 1) рядом с exe установщика: <exe_dir>/payload
+    // 1) Вшитый ZIP (single-file установщик с сайта).
+    if !EMBEDDED_PAYLOAD_ZIP.is_empty() {
+        if let Some(dir) = extract_embedded_payload() {
+            return Some(dir);
+        }
+    }
+    // 2) рядом с exe установщика: <exe_dir>/payload
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let p = dir.join("payload");
@@ -85,12 +96,39 @@ pub fn payload_dir() -> Option<PathBuf> {
             }
         }
     }
-    // 2) dev-режим: installer/payload от cwd
+    // 3) dev-режим: installer/payload от cwd
     let dev = PathBuf::from("payload");
     if dev.is_dir() {
         return Some(dev);
     }
     None
+}
+
+/// Распаковывает вшитый payload.zip во временную папку. Возвращает путь к ней.
+fn extract_embedded_payload() -> Option<PathBuf> {
+    use std::io::Cursor;
+    let dest = std::env::temp_dir().join("infinity-payload");
+    // Чистим прошлую распаковку (переустановка/повторный запуск).
+    let _ = std::fs::remove_dir_all(&dest);
+    std::fs::create_dir_all(&dest).ok()?;
+
+    let mut zip = zip::ZipArchive::new(Cursor::new(EMBEDDED_PAYLOAD_ZIP)).ok()?;
+    for i in 0..zip.len() {
+        let mut entry = zip.by_index(i).ok()?;
+        // enclosed_name защищает от zip-slip (путей вида ../).
+        let Some(rel) = entry.enclosed_name() else { continue };
+        let out = dest.join(rel);
+        if entry.is_dir() {
+            std::fs::create_dir_all(&out).ok()?;
+        } else {
+            if let Some(parent) = out.parent() {
+                std::fs::create_dir_all(parent).ok()?;
+            }
+            let mut f = std::fs::File::create(&out).ok()?;
+            std::io::copy(&mut entry, &mut f).ok()?;
+        }
+    }
+    Some(dest)
 }
 
 /// Полный цикл установки. Блокирующая; вызывать из отдельного потока.
