@@ -4,6 +4,7 @@ import { useAppStore, pingKey } from "../state/appStore";
 import { InfinityColors as C, pingColor } from "../theme/colors";
 import { formatBytes, formatSpeed } from "../util/format";
 import { countryCodeFromRemark } from "../util/countryFlag";
+import { blockedReason, isKeyBlocked } from "../util/keyStatus";
 import { Flag, hasFlag } from "../components/Flag";
 import { ConnectHero } from "../components/ConnectHero";
 import { GlassCard, StatusPill, EmojiBadge, Chip } from "../components/ui";
@@ -22,7 +23,8 @@ export default function HomeScreen() {
 
   const [refreshing, setRefreshing] = useState(false);
 
-  /** Загружает ключи и серверы из кэша/сети, восстанавливает выбор. */
+  /** Загружает ключи и серверы из кэша/сети, восстанавливает выбор.
+   *  Заблокированные подписки (истекла/отключена/лимит) не автоселектим. */
   async function loadKeys() {
     const ks = await keys();
     setKeys(ks);
@@ -30,7 +32,7 @@ export default function HomeScreen() {
       try {
         const servers = await keyServers(k.id);
         setServers(k.id, servers);
-        if (!useAppStore.getState().selection && servers.length > 0) {
+        if (!useAppStore.getState().selection && servers.length > 0 && !isKeyBlocked(k)) {
           setSelection({ keyId: k.id, serverIndex: servers[0].index });
         }
       } catch {
@@ -68,11 +70,15 @@ export default function HomeScreen() {
     }
   }
 
-  /** Пингует все загруженные серверы по очереди (бэк сериализует proxy-замеры). */
+  /** Пингует все загруженные серверы по очереди (бэк сериализует proxy-замеры).
+   *  Серверы заблокированных подписок не пингуем — подключение к ним запрещено. */
   async function pingAll() {
-    const map = useAppStore.getState().serversByKey;
+    const st = useAppStore.getState();
+    const map = st.serversByKey;
+    const blocked = new Set(st.keys.filter(isKeyBlocked).map((k) => k.id));
     for (const [keyIdStr, servers] of Object.entries(map)) {
       const keyId = Number(keyIdStr);
+      if (blocked.has(keyId)) continue;
       for (const srv of servers) {
         try {
           const ms = await pingServer(keyId, srv.index);
@@ -90,8 +96,17 @@ export default function HomeScreen() {
   async function onHero() {
     setError(null);
     try {
-      if (connected || connecting) await disconnect();
-      else if (selection) await connect(selection.keyId, selection.serverIndex);
+      if (connected || connecting) {
+        await disconnect();
+      } else if (selection) {
+        // Подписка могла стать недоступной после выбора — проверяем перед стартом.
+        const key = useAppStore.getState().keys.find((k) => k.id === selection.keyId);
+        if (key && isKeyBlocked(key)) {
+          setError(blockedReason(key));
+          return;
+        }
+        await connect(selection.keyId, selection.serverIndex);
+      }
     } catch (e) {
       setError(errMessage(e));
     }
@@ -161,11 +176,21 @@ export default function HomeScreen() {
           const servers = serversByKey[k.id] ?? [];
           const isSelectedKey = selection?.keyId === k.id;
           const fastest = fastestIndex(k.id, servers, pings);
+          const blocked = isKeyBlocked(k);
           return (
-            <div key={k.id} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div key={k.id} style={{ display: "flex", flexDirection: "column", gap: 8, opacity: blocked ? 0.55 : 1 }}>
               <KeyCard k={k} number={i + 1} selected={isSelectedKey}
-                onClick={() => servers[0] && setSelection({ keyId: k.id, serverIndex: servers[0].index })} />
-              {isSelectedKey && servers.map((srv) => (
+                onClick={() => {
+                  // Недоступная подписка: серверы не выбираем, показываем причину.
+                  if (blocked) { setError(blockedReason(k)); return; }
+                  if (servers[0]) setSelection({ keyId: k.id, serverIndex: servers[0].index });
+                }} />
+              {blocked && (
+                <div style={{ paddingLeft: 12, color: C.coral, fontSize: 12 }}>
+                  🔒 {blockedReason(k)} — подключение недоступно
+                </div>
+              )}
+              {!blocked && isSelectedKey && servers.map((srv) => (
                 <div key={srv.index} style={{ paddingLeft: 12 }}>
                   <ServerRow server={srv}
                     selected={selection?.serverIndex === srv.index}
@@ -174,7 +199,7 @@ export default function HomeScreen() {
                     onClick={() => setSelection({ keyId: k.id, serverIndex: srv.index })} />
                 </div>
               ))}
-              {isSelectedKey && servers.length === 0 && (
+              {!blocked && isSelectedKey && servers.length === 0 && (
                 <div style={{ paddingLeft: 12, color: C.mutedDim, fontSize: 12 }}>Загрузка серверов…</div>
               )}
             </div>

@@ -140,6 +140,79 @@ pub struct KeyDto {
     pub hwid_devices_used: Option<i32>,
 }
 
+/// Текущая дата UTC как `YYYY-MM-DD` (civil-from-days, алгоритм Хиннанта —
+/// точная григорианская конверсия без внешних зависимостей).
+fn today_utc_date() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|t| t.as_secs() as i64)
+        .unwrap_or(0);
+    let z = secs.div_euclid(86_400) + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097; // [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // [0, 399]
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
+    let mp = (5 * doy + 2) / 153; // [0, 11]
+    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
+    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+impl KeyDto {
+    /// Достигнут лимит устройств (данные есть и исчерпаны). Как в Android:
+    /// device_limit с фолбэком на hwid_device_limit.
+    fn devices_exhausted(&self) -> bool {
+        let limit = self.device_limit.or(self.hwid_device_limit).unwrap_or(0);
+        let used = self.devices_used.or(self.hwid_devices_used).unwrap_or(0);
+        limit > 0 && used >= limit
+    }
+
+    /// Истёк ли срок ключа. ISO-8601 (`YYYY-MM-DD…`) сравнима лексикографически,
+    /// поэтому достаточно сравнить префикс даты со «вчера» (щадяще к TZ):
+    /// непарсибельное значение считаем не истёкшим.
+    fn expired(&self) -> bool {
+        let Some(raw) = self.expires_at.as_deref() else { return false };
+        if raw.len() < 10 {
+            return false;
+        }
+        let key_date = &raw[..10]; // YYYY-MM-DD
+        if !key_date.as_bytes()[..4].iter().all(u8::is_ascii_digit) {
+            return false;
+        }
+        key_date < today_utc_date().as_str()
+    }
+
+    /// Причина блокировки подключения (зеркало Android VpnKey.status()):
+    /// приоритет — статус сервера; иначе выводим по датам/активности/лимиту.
+    /// `None` — ключ доступен (ACTIVE).
+    pub fn blocked_reason(&self) -> Option<&'static str> {
+        match self.status.as_deref().map(|s| s.trim().to_uppercase()) {
+            Some(s) if s == "ACTIVE" => return None,
+            Some(s) if s == "EXPIRED" => return Some("Срок подписки истёк"),
+            Some(s) if s == "DISABLED" => return Some("Подписка отключена"),
+            Some(s) if s == "LIMITED" => {
+                return Some(if self.devices_exhausted() {
+                    "Достигнут лимит устройств этой подписки"
+                } else {
+                    "Достигнут лимит этой подписки"
+                })
+            }
+            _ => {}
+        }
+        if self.expired() {
+            Some("Срок подписки истёк")
+        } else if !self.is_active {
+            Some("Подписка отключена")
+        } else if self.devices_exhausted() {
+            Some("Достигнут лимит устройств этой подписки")
+        } else {
+            None
+        }
+    }
+}
+
 // ── Config/servers ──
 
 #[derive(Debug, Clone, Deserialize)]
@@ -230,4 +303,61 @@ pub struct SubscriptionInfoDto {
     pub total_spent: Option<f64>,
     #[serde(default)]
     pub total_months: Option<i32>,
+}
+
+#[cfg(test)]
+mod key_status_tests {
+    use super::*;
+
+    fn key() -> KeyDto {
+        serde_json::from_str(r#"{"id": 1, "is_active": true}"#).unwrap()
+    }
+
+    #[test]
+    fn active_key_not_blocked() {
+        let mut k = key();
+        k.expires_at = Some("2099-01-01T00:00:00Z".into());
+        assert_eq!(k.blocked_reason(), None);
+    }
+
+    #[test]
+    fn server_status_has_priority() {
+        let mut k = key();
+        k.status = Some("DISABLED".into());
+        assert_eq!(k.blocked_reason(), Some("Подписка отключена"));
+        // ACTIVE от сервера перекрывает клиентские признаки.
+        k.status = Some("ACTIVE".into());
+        k.is_active = false;
+        assert_eq!(k.blocked_reason(), None);
+    }
+
+    #[test]
+    fn expired_and_inactive_and_device_limit() {
+        let mut k = key();
+        k.expires_at = Some("2020-01-01".into());
+        assert_eq!(k.blocked_reason(), Some("Срок подписки истёк"));
+
+        let mut k = key();
+        k.is_active = false;
+        assert_eq!(k.blocked_reason(), Some("Подписка отключена"));
+
+        let mut k = key();
+        k.device_limit = Some(2);
+        k.devices_used = Some(2);
+        assert_eq!(k.blocked_reason(), Some("Достигнут лимит устройств этой подписки"));
+
+        // hwid-фолбэк как в Android.
+        let mut k = key();
+        k.hwid_device_limit = Some(1);
+        k.hwid_devices_used = Some(3);
+        assert_eq!(k.blocked_reason(), Some("Достигнут лимит устройств этой подписки"));
+    }
+
+    #[test]
+    fn today_date_is_iso() {
+        let d = today_utc_date();
+        assert_eq!(d.len(), 10);
+        assert_eq!(&d[4..5], "-");
+        assert!(d.as_str() > "2025-01-01" && d.as_str() < "2100-01-01");
+    }
 }

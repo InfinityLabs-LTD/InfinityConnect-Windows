@@ -165,6 +165,13 @@ pub async fn connect(
     api: State<'_, ApiClient>,
     tunnel: State<'_, TunnelManager>,
 ) -> AppResult<()> {
+    // Подписка недоступна (истекла/отключена/лимит устройств) — подключение
+    // запрещено на бэке независимо от UI (защита от обхода фронта).
+    let key = api.key(key_id).await?;
+    if let Some(reason) = key.blocked_reason() {
+        return Err(crate::error::AppError::Other(reason.into()));
+    }
+
     let config = build_connection(&api, key_id, server_index).await?;
     let routing = load_routing_settings();
     // Гибрид: ядро-прокси (socks) + sing-box (TUN + split-tunnel по процессам).
