@@ -22,6 +22,8 @@ export default function HomeScreen() {
   } = s;
 
   const [refreshing, setRefreshing] = useState(false);
+  /** Идёт «горячее» переключение сервера — блокируем повторные клики. */
+  const [switching, setSwitching] = useState(false);
 
   /** Загружает ключи и серверы из кэша/сети, восстанавливает выбор.
    *  Заблокированные подписки (истекла/отключена/лимит) не автоселектим. */
@@ -92,6 +94,33 @@ export default function HomeScreen() {
 
   const connected = tunnel.status === "connected";
   const connecting = tunnel.status === "connecting";
+
+  /** Выбор сервера/ключа. Если туннель уже активен — «горячо» переключаемся на
+   *  новый сервер без ручного отключения (как в Happ): connect на бэке сам гасит
+   *  предыдущее соединение. Иначе просто запоминаем выбор. */
+  async function chooseServer(keyId: number, serverIndex: number) {
+    // Клик по уже активному сервуру — ничего не делаем (не рвём соединение).
+    if (selection?.keyId === keyId && selection?.serverIndex === serverIndex && connected) {
+      return;
+    }
+    setSelection({ keyId, serverIndex });
+    if ((connected || connecting) && !switching) {
+      setError(null);
+      const key = useAppStore.getState().keys.find((k) => k.id === keyId);
+      if (key && isKeyBlocked(key)) {
+        setError(blockedReason(key));
+        return;
+      }
+      setSwitching(true);
+      try {
+        await connect(keyId, serverIndex);
+      } catch (e) {
+        setError(errMessage(e));
+      } finally {
+        setSwitching(false);
+      }
+    }
+  }
 
   async function onHero() {
     setError(null);
@@ -183,7 +212,9 @@ export default function HomeScreen() {
                 onClick={() => {
                   // Недоступная подписка: серверы не выбираем, показываем причину.
                   if (blocked) { setError(blockedReason(k)); return; }
-                  if (servers[0]) setSelection({ keyId: k.id, serverIndex: servers[0].index });
+                  // Не переподключаемся при простом раскрытии уже выбранного ключа.
+                  if (isSelectedKey) return;
+                  if (servers[0]) chooseServer(k.id, servers[0].index);
                 }} />
               {blocked && (
                 <div style={{ paddingLeft: 12, color: C.coral, fontSize: 12 }}>
@@ -196,7 +227,7 @@ export default function HomeScreen() {
                     selected={selection?.serverIndex === srv.index}
                     isFastest={srv.index === fastest}
                     ping={pings[pingKey(k.id, srv.index)]}
-                    onClick={() => setSelection({ keyId: k.id, serverIndex: srv.index })} />
+                    onClick={() => chooseServer(k.id, srv.index)} />
                 </div>
               ))}
               {!blocked && isSelectedKey && servers.length === 0 && (
