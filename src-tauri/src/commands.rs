@@ -7,7 +7,7 @@
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
-use crate::api::dto::{DiscoveryDto, KeyDto, UserInfoDto};
+use crate::api::dto::{DiscoveryDto, KeyDto, SubscriptionInfoDto, UserInfoDto};
 use crate::api::ApiClient;
 use crate::connection::build_connection;
 use crate::engine::{selector, xray_config};
@@ -53,6 +53,38 @@ pub async fn is_authorized(api: State<'_, ApiClient>) -> AppResult<bool> {
 #[tauri::command]
 pub async fn user_info(api: State<'_, ApiClient>) -> AppResult<UserInfoDto> {
     api.user_info().await
+}
+
+/// Агрегированные данные подписки для экрана профиля (срок/ключи/потрачено).
+#[tauri::command]
+pub async fn subscription_info(api: State<'_, ApiClient>) -> AppResult<SubscriptionInfoDto> {
+    api.subscription_info().await
+}
+
+/// URL поддержки из discovery (для кнопки «Написать в поддержку»); None — скрыть.
+#[tauri::command]
+pub async fn support_url(api: State<'_, ApiClient>) -> AppResult<Option<String>> {
+    Ok(api.support_url())
+}
+
+/// Открывает https-ссылку в браузере по умолчанию (поддержка/сайт).
+/// Только http(s) — произвольные схемы не пропускаем.
+#[tauri::command]
+pub fn open_url(url: String) -> AppResult<()> {
+    let trimmed = url.trim();
+    if !trimmed.starts_with("https://") && !trimmed.starts_with("http://") {
+        return Err(crate::error::AppError::Other("допустимы только http(s)-ссылки".into()));
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", trimmed])
+            .creation_flags(0x0800_0000) // CREATE_NO_WINDOW
+            .spawn()
+            .map_err(|e| crate::error::AppError::Other(format!("не удалось открыть ссылку: {e}")))?;
+    }
+    Ok(())
 }
 
 /// Список ключей (подписок) пользователя.

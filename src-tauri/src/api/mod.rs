@@ -235,6 +235,16 @@ impl ApiClient {
         self.get_auth("user/info").await
     }
 
+    /// Агрегированные данные подписки (срок/ключи/месяцы/потрачено) для профиля.
+    pub async fn subscription_info(&self) -> AppResult<SubscriptionInfoDto> {
+        self.get_auth("user/subscription").await
+    }
+
+    /// support_url из офлайн-кэша discovery (для кнопки «Написать в поддержку»).
+    pub fn support_url(&self) -> Option<String> {
+        store::read_cache::<DiscoveryDto>(store::CACHE_DISCOVERY)?.support_url
+    }
+
     /// Список ключей. Кэшируется для офлайн-режима.
     pub async fn keys(&self) -> AppResult<Vec<KeyDto>> {
         match self.get_auth::<KeysResponseDto>("keys").await {

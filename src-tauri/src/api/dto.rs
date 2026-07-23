@@ -212,3 +212,22 @@ pub struct UserInfoDto {
     #[serde(default)]
     pub plan_name: Option<String>,
 }
+
+/// Ответ `GET /v1/user/subscription` — агрегированные данные по подписке
+/// (зеркало Android SubscriptionInfoDto).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubscriptionInfoDto {
+    #[serde(default)]
+    pub is_active: bool,
+    #[serde(default)]
+    pub keys_count: i32,
+    #[serde(default)]
+    pub latest_expiry: Option<String>,
+    /// Наименьшая дата окончания среди активных ключей — реальный «ближайший» срок.
+    #[serde(default)]
+    pub earliest_expiry: Option<String>,
+    #[serde(default)]
+    pub total_spent: Option<f64>,
+    #[serde(default)]
+    pub total_months: Option<i32>,
+}

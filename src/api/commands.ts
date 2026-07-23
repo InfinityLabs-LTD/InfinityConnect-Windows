@@ -83,6 +83,25 @@ export const isAuthorized = () => invoke<boolean>("is_authorized");
 
 export const userInfo = () => invoke<UserInfo>("user_info");
 
+/** Агрегированные данные подписки (зеркало Android SubscriptionInfo). */
+export interface SubscriptionInfo {
+  is_active: boolean;
+  keys_count: number;
+  latest_expiry?: string;
+  /** Ближайшая дата окончания среди активных ключей — реальный «до когда». */
+  earliest_expiry?: string;
+  total_spent?: number;
+  total_months?: number;
+}
+
+export const subscriptionInfo = () => invoke<SubscriptionInfo>("subscription_info");
+
+/** URL поддержки из discovery; null — кнопку не показывать. */
+export const supportUrl = () => invoke<string | null>("support_url");
+
+/** Открыть http(s)-ссылку в браузере по умолчанию. */
+export const openUrl = (url: string) => invoke<void>("open_url", { url });
+
 export const keys = () => invoke<Key[]>("keys");
 
 /** Принудительно обновить подписки (ключи + тела). Возвращает число обновлённых. */
