@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { connect, disconnect, keys, keyServers, pingServer, refreshSubscriptions, type Key, type SubscriptionServer } from "../api/commands";
+import { connect, disconnect, errMessage, keys, keyServers, pingServer, refreshSubscriptions, type Key, type SubscriptionServer } from "../api/commands";
 import { useAppStore, pingKey } from "../state/appStore";
 import { InfinityColors as C, pingColor } from "../theme/colors";
 import { formatBytes, formatSpeed } from "../util/format";
@@ -351,8 +351,4 @@ function statusDot(status?: string): string {
   if (status === "LIMITED") return C.amber;
   if (status === "DISABLED") return C.mutedDim;
   return C.mint;
-}
-function errMessage(e: unknown): string {
-  if (e && typeof e === "object" && "message" in e) return String((e as { message?: string }).message ?? "Ошибка");
-  return String(e);
 }

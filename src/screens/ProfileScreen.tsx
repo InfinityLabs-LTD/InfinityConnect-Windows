@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   userInfo, subscriptionInfo, supportUrl, openUrl, logout, keys as fetchKeys,
+  errMessage, isUnauthorized,
   type UserInfo, type SubscriptionInfo, type Key,
 } from "../api/commands";
 import { useAppStore } from "../state/appStore";
@@ -20,7 +21,15 @@ export default function ProfileScreen() {
   const [err, setErr] = useState<string | null>(null);
 
   useEffect(() => {
-    userInfo().then(setUser).catch((e) => setErr(errMessage(e)));
+    userInfo().then(setUser).catch((e) => {
+      // Протухшие/битые токены: выкидываем на экран входа, а не показываем
+      // пустой профиль с непонятной ошибкой (первопричина «[object Object]»).
+      if (isUnauthorized(e)) {
+        forceRelogin();
+        return;
+      }
+      setErr(errMessage(e));
+    });
     subscriptionInfo().then(setSub).catch(() => {/* метрики опциональны */});
     supportUrl().then(setSupport).catch(() => {});
     // Ключи для списка сроков: если стор пуст (профиль открыт до Home) — дозагружаем.
@@ -28,6 +37,16 @@ export default function ProfileScreen() {
       fetchKeys().then((ks) => useAppStore.getState().setKeys(ks)).catch(() => {});
     }
   }, []);
+
+  /** Сбрасывает локальную сессию и уводит на экран входа (протухшие токены). */
+  async function forceRelogin() {
+    try { await logout(); } catch { /* токены чистятся на бэке в любом случае */ }
+    const s = useAppStore.getState();
+    s.setKeys([]);
+    s.setSelection(null);
+    s.setError(null);
+    setRoute("auth");
+  }
 
   async function onLogout() {
     // Даже если серверный logout не удался (офлайн), локально выходим:
@@ -283,9 +302,4 @@ function plural(n: number, one: string, few: string, many: string): string {
 function formatMoney(v: number): string {
   const s = v % 1 === 0 ? String(v) : v.toFixed(2).replace(".", ",");
   return `${s} ₽`;
-}
-
-function errMessage(e: unknown): string {
-  if (e && typeof e === "object" && "message" in e) return String((e as { message?: string }).message ?? "Ошибка");
-  return String(e);
 }

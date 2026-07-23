@@ -28,6 +28,32 @@ export interface AppError {
   message?: string;
 }
 
+/** true — ошибка бэка означает «нужен повторный вход» (протухшие токены). */
+export function isUnauthorized(e: unknown): boolean {
+  return !!e && typeof e === "object" && (e as AppError).kind === "Unauthorized";
+}
+
+/** Человекочитаемый текст ошибки бэка. Варианты AppError без данных (напр.
+ *  Unauthorized) не несут поля `message` — берём текст по `kind`, иначе был бы
+ *  бессмысленный «[object Object]». */
+export function errMessage(e: unknown): string {
+  if (e && typeof e === "object" && "kind" in e) {
+    const err = e as AppError;
+    if (err.message && err.message.trim()) return err.message;
+    switch (err.kind) {
+      case "Unauthorized": return "Неверный логин или пароль";
+      case "Network": return "Нет связи с сервером";
+      case "Parse": return "Ошибка обработки ответа сервера";
+      case "Storage": return "Ошибка локального хранилища";
+      default: return "Произошла ошибка";
+    }
+  }
+  if (e && typeof e === "object" && "message" in e) {
+    return String((e as { message?: string }).message ?? "Ошибка");
+  }
+  return String(e);
+}
+
 /** Ключ (подписка) пользователя. */
 export interface Key {
   id: number;
@@ -111,6 +137,9 @@ export interface AuthResultEvent {
 /** Подписка на результат входа через сайт (`auth://result`). */
 export const listenAuthResult = (cb: (e: AuthResultEvent) => void): Promise<UnlistenFn> =>
   listen<AuthResultEvent>("auth://result", (e) => cb(e.payload));
+
+/** Забирает результат, если deep-link обработан ДО подписки (гонка). */
+export const takeAuthResult = () => invoke<AuthResultEvent | null>("take_auth_result");
 
 /** Открыть http(s)-ссылку в браузере по умолчанию. */
 export const openUrl = (url: string) => invoke<void>("open_url", { url });

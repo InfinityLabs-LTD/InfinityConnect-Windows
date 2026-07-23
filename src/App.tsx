@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { isAuthorized, onTunnelState, onTunnelStats, tunnelStatus } from "./api/commands";
+import { isAuthorized, isUnauthorized, logout, onTunnelState, onTunnelStats, tunnelStatus, userInfo } from "./api/commands";
 import { useAppStore } from "./state/appStore";
 import { InfinityColors as C } from "./theme/colors";
 import { MeshBackground } from "./components/MeshBackground";
@@ -25,6 +25,18 @@ export default function App() {
     (async () => {
       try {
         if (await isAuthorized()) {
+          // Есть сохранённые токены — но они могли протухнуть. Проверяем сессию
+          // одним запросом: при Unauthorized чистим и остаёмся на входе (иначе
+          // пользователь попадал в пустой профиль с ошибкой «[object Object]»).
+          try {
+            await userInfo();
+          } catch (e) {
+            if (isUnauthorized(e)) {
+              await logout().catch(() => {});
+              return; // остаёмся на auth
+            }
+            // Сетевая ошибка (офлайн) — доверяем кэшу, пускаем в home.
+          }
           setRoute("home");
           // Восстанавливаем состояние туннеля (мог остаться подключённым).
           if (await tunnelStatus()) setTunnel({ status: "connected" });
