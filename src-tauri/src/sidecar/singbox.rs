@@ -1,12 +1,16 @@
 //! Ядро sing-box как дочерний процесс: поднимает TUN и маршрутизирует трафик по
-//! процессам (per-app split-tunnel), проксируя в локальный SOCKS xray-ядра.
-//! Статистику трафика в гибриде отдаёт xray (весь трафик идёт через него), поэтому
-//! `query_traffic` здесь пустой.
+//! процессам (per-app split-tunnel), проксируя в локальный SOCKS ядра-прокси.
+//! Статистику трафика читаем ЗДЕСЬ через Clash-API (`/connections` →
+//! uploadTotal/downloadTotal): sing-box видит ВЕСЬ трафик, поэтому счётчик корректен
+//! для любого ядра-прокси (у hysteria v2.10 собственный trafficStats не работает).
 
-use std::io::Write;
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
+use crate::engine::singbox_config::CLASH_API_PORT;
 use crate::error::{AppError, AppResult};
 
 use super::{hide_window, CoreProcess, Traffic};
@@ -61,9 +65,32 @@ impl CoreProcess for SingboxProcess {
     }
 
     fn query_traffic(&self) -> Traffic {
-        // Статистику в гибриде отдаёт xray-процесс (весь трафик через него).
-        Traffic::default()
+        clash_traffic(CLASH_API_PORT).unwrap_or_default()
     }
+}
+
+/// Читает накопленный трафик из Clash-API sing-box: GET /connections →
+/// `{"uploadTotal":N,"downloadTotal":N,...}`. Минимальный HTTP без внешних зависимостей.
+fn clash_traffic(port: u16) -> Option<Traffic> {
+    let mut stream = TcpStream::connect(("127.0.0.1", port)).ok()?;
+    stream.set_read_timeout(Some(Duration::from_millis(500))).ok()?;
+    stream.set_write_timeout(Some(Duration::from_millis(500))).ok()?;
+
+    let req = format!(
+        "GET /connections HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+    );
+    stream.write_all(req.as_bytes()).ok()?;
+
+    let mut resp = String::new();
+    stream.read_to_string(&mut resp).ok()?;
+
+    // Тело — после пустой строки (конец заголовков).
+    let body = resp.split("\r\n\r\n").nth(1)?;
+    let v: serde_json::Value = serde_json::from_str(body.trim()).ok()?;
+    Some(Traffic {
+        uplink: v.get("uploadTotal").and_then(|x| x.as_u64()).unwrap_or(0),
+        downlink: v.get("downloadTotal").and_then(|x| x.as_u64()).unwrap_or(0),
+    })
 }
 
 impl Drop for SingboxProcess {

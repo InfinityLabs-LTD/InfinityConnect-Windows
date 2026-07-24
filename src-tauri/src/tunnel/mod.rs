@@ -57,9 +57,22 @@ impl TunnelManager {
 
     /// Поднимает гибридный туннель: ядро-прокси (socks) + sing-box (TUN+routing).
     /// `kill_switch` — блокировать не-VPN трафик.
-    pub async fn connect(&self, app: AppHandle, plan: HybridPlan, kill_switch: bool) -> AppResult<()> {
-        self.disconnect(&app).await;
-        emit_state(&app, TunnelState::Connecting);
+    /// `is_switch` — «горячее» переключение: гасим старый туннель ТИХО (без эмита
+    /// Disconnected), чтобы UI не мигал idle между серверами.
+    pub async fn connect(
+        &self,
+        app: AppHandle,
+        plan: HybridPlan,
+        kill_switch: bool,
+        is_switch: bool,
+    ) -> AppResult<()> {
+        if is_switch {
+            emit_state(&app, TunnelState::Connecting);
+            self.teardown().await;
+        } else {
+            self.disconnect(&app).await;
+            emit_state(&app, TunnelState::Connecting);
+        }
 
         // 1. Ядро-прокси (xray/hysteria) — слушает локальный SOCKS, TUN НЕ поднимает.
         let proxy = sidecar::start_proxy(
@@ -125,8 +138,15 @@ impl TunnelManager {
         Ok(())
     }
 
-    /// Гасит активный туннель, откатывает маршруты и снимает kill-switch.
+    /// Гасит активный туннель, откатывает маршруты, снимает kill-switch и эмитит
+    /// Disconnected. Явное отключение по кнопке.
     pub async fn disconnect(&self, app: &AppHandle) {
+        self.teardown().await;
+        emit_state(app, TunnelState::Disconnected);
+    }
+
+    /// Тихое гашение БЕЗ эмита состояния — общая часть disconnect() и переключения.
+    async fn teardown(&self) {
         let active = self.inner.lock().await.take();
         if let Some(active) = active {
             active.monitor.abort();
@@ -143,7 +163,6 @@ impl TunnelManager {
                 killswitch::disable();
             }
         }
-        emit_state(app, TunnelState::Disconnected);
     }
 }
 
@@ -196,7 +215,9 @@ fn spawn_monitor(
                 break;
             }
 
-            let t = proxy.lock().await.query_traffic();
+            // Статистику берём с sing-box (Clash-API): он видит ВЕСЬ трафик через
+            // TUN, поэтому счётчик корректен для любого ядра-прокси (xray и hysteria).
+            let t = singbox.lock().await.query_traffic();
             let up_speed = t.uplink.saturating_sub(prev_up);
             let down_speed = t.downlink.saturating_sub(prev_down);
             prev_up = t.uplink;

@@ -191,7 +191,10 @@ pub async fn connect(
     // Гибрид: ядро-прокси (socks) + sing-box (TUN + split-tunnel по процессам).
     // Split-tunnel по приложениям (3 режима) встроен в sing-box-конфиг через select().
     let plan = selector::select(&config, xray_config::DEFAULT_MTU, &routing);
-    tunnel.connect(app, plan, routing.kill_switch).await
+    // «Горячее» переключение: туннель уже активен → гасим старый молча, без
+    // idle-вспышки в UI (Connected → Connecting → Connected).
+    let is_switch = tunnel.is_connected().await;
+    tunnel.connect(app, plan, routing.kill_switch, is_switch).await
 }
 
 /// Отключение туннеля.

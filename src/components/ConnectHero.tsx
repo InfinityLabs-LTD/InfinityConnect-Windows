@@ -117,6 +117,10 @@ export function ConnectHero({
           boxShadow: `0 8px 40px ${accent}66`,
           position: "relative",
           zIndex: 1,
+          // Плавная смена свечения при переходах состояния (mint↔indigo). Сам
+          // градиент CSS кроссфейдить не умеет — тянем box-shadow, под ним свап
+          // градиента почти незаметен.
+          transition: "box-shadow 400ms ease, opacity 200ms ease",
         }}
       >
         {/* Иконка питания. */}

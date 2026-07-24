@@ -43,6 +43,9 @@ interface AppState {
   setKeys: (k: Key[]) => void;
   setServers: (keyId: number, servers: SubscriptionServer[]) => void;
   setPing: (keyId: number, serverIndex: number, ms: number) => void;
+  /** Сбрасывает все измеренные пинги (перед повторным замером — чтобы бейдж
+   *  «Быстрейший» не скакал на старых значениях, пока идёт новый прогон). */
+  clearPings: () => void;
   setSelection: (s: Selection | null) => void;
   setError: (e: string | null) => void;
 }
@@ -73,6 +76,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((s) => ({ serversByKey: { ...s.serversByKey, [keyId]: servers } })),
   setPing: (keyId, serverIndex, ms) =>
     set((s) => ({ pings: { ...s.pings, [pingKey(keyId, serverIndex)]: ms } })),
+  clearPings: () => set({ pings: {} }),
   setSelection: (selection) => set({ selection }),
   setError: (error) => set({ error }),
 }));

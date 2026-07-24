@@ -8,11 +8,13 @@ use serde::{Deserialize, Serialize};
 pub enum PingMethod {
     /// HTTP GET к тест-URL ЧЕРЕЗ протокол сервера (локальный SOCKS-inbound ядра).
     /// End-to-end задержка через VLESS/Reality. Для Hysteria2 — откат на TCP.
+    /// ДЕФОЛТ: TCP-хендшейк до этих серверов терминируется локально/на edge (~1мс,
+    /// бесполезен как метрика) — реальный RTT даёт только сквозной proxy-пинг.
+    #[default]
     ProxyGet,
     /// HTTP HEAD через прокси-сервер: только заголовки, легче GET.
     ProxyHead,
     /// TCP-хендшейк до host:port: чистая задержка до узла.
-    #[default]
     Tcp,
     /// ICMP echo до адреса сервера: сетевой RTT без TCP/TLS.
     Icmp,

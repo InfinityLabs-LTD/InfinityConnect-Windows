@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { connect, disconnect, errMessage, keys, keyServers, pingServer, refreshSubscriptions, type Key, type SubscriptionServer } from "../api/commands";
-import { useAppStore, pingKey } from "../state/appStore";
+import { useAppStore, pingKey, type Selection } from "../state/appStore";
 import { InfinityColors as C, pingColor } from "../theme/colors";
 import { formatBytes, formatSpeed } from "../util/format";
 import { countryCodeFromRemark } from "../util/countryFlag";
@@ -24,6 +24,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   /** Идёт «горячее» переключение сервера — блокируем повторные клики. */
   const [switching, setSwitching] = useState(false);
+  /** Цель «горячего» переключения — чтобы показать спиннер на нужной строке. */
+  const [switchingTo, setSwitchingTo] = useState<Selection | null>(null);
 
   /** Загружает ключи и серверы из кэша/сети, восстанавливает выбор.
    *  Заблокированные подписки (истекла/отключена/лимит) не автоселектим. */
@@ -76,6 +78,9 @@ export default function HomeScreen() {
    *  Серверы заблокированных подписок не пингуем — подключение к ним запрещено. */
   async function pingAll() {
     const st = useAppStore.getState();
+    // Сбрасываем прошлые результаты: пока идёт новый прогон, бейдж «Быстрейший»
+    // скрыт (fastestIndex ждёт, пока измерятся ВСЕ серверы) и не скачет.
+    st.clearPings();
     const map = st.serversByKey;
     const blocked = new Set(st.keys.filter(isKeyBlocked).map((k) => k.id));
     for (const [keyIdStr, servers] of Object.entries(map)) {
@@ -112,12 +117,14 @@ export default function HomeScreen() {
         return;
       }
       setSwitching(true);
+      setSwitchingTo({ keyId, serverIndex });
       try {
         await connect(keyId, serverIndex);
       } catch (e) {
         setError(errMessage(e));
       } finally {
         setSwitching(false);
+        setSwitchingTo(null);
       }
     }
   }
@@ -158,7 +165,9 @@ export default function HomeScreen() {
           <div style={{ fontSize: 16, fontWeight: 600 }}>{statusLabel(tunnel.status)}</div>
           {selectedServer && (
             <div style={{ color: C.muted, fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ opacity: 0.7 }}>Сервер:</span> {selectedServer.remark}
+              <span style={{ opacity: 0.7 }}>Сервер:</span>
+              <ServerFlagInline remark={selectedServer.remark} />
+              {stripCountryCode(selectedServer.remark)}
             </div>
           )}
           {tunnel.status === "error" && tunnel.message && (
@@ -227,6 +236,7 @@ export default function HomeScreen() {
                     selected={selection?.serverIndex === srv.index}
                     isFastest={srv.index === fastest}
                     ping={pings[pingKey(k.id, srv.index)]}
+                    switching={switchingTo?.keyId === k.id && switchingTo?.serverIndex === srv.index}
                     onClick={() => chooseServer(k.id, srv.index)} />
                 </div>
               ))}
@@ -265,19 +275,21 @@ function KeyCard({ k, number, selected, onClick }: { k: Key; number: number; sel
   );
 }
 
-function ServerRow({ server, selected, isFastest, ping, onClick }: { server: SubscriptionServer; selected: boolean; isFastest: boolean; ping: number | undefined; onClick: () => void }) {
+function ServerRow({ server, selected, isFastest, ping, switching, onClick }: { server: SubscriptionServer; selected: boolean; isFastest: boolean; ping: number | undefined; switching: boolean; onClick: () => void }) {
   // ping: undefined — ещё не мерян; <=0 — недоступен/ошибка («—»); иначе мс.
   const pingText = ping === undefined ? "…" : ping <= 0 ? "—" : `${ping} мс`;
+  // Подсвечиваем рамку целевой строки во время переключения (accent мигает).
+  const borderColor = switching ? `${C.accentBlue}CC` : selected ? `${C.accentBlue}8C` : C.stroke;
   return (
     <div onClick={onClick}
       onMouseEnter={(e) => { e.currentTarget.style.borderColor = `${C.accentBlue}8C`; e.currentTarget.style.transform = "translateX(3px)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.borderColor = selected ? `${C.accentBlue}8C` : C.stroke; e.currentTarget.style.transform = "translateX(0)"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.borderColor = borderColor; e.currentTarget.style.transform = "translateX(0)"; }}
       style={{
         display: "flex", alignItems: "center", gap: 12, cursor: "pointer",
         background: selected ? C.surfaceHi : C.surface,
-        border: `1px solid ${selected ? `${C.accentBlue}8C` : C.stroke}`,
+        border: `1px solid ${borderColor}`,
         borderRadius: 16, padding: "12px 14px",
-        transition: "border-color 160ms, transform 160ms",
+        transition: "border-color 220ms ease, transform 160ms, background 220ms ease",
       }}>
       <ServerFlag remark={server.remark} />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 2 }}>
@@ -289,12 +301,20 @@ function ServerRow({ server, selected, isFastest, ping, onClick }: { server: Sub
             </span>
           )}
         </div>
-        <span style={{ color: C.muted, fontSize: 12 }}>
-          {protocolDisplay(server.protocol)}
+        <span style={{ color: switching ? C.accentBlue : C.muted, fontSize: 12, transition: "color 220ms ease" }}>
+          {switching ? "Переключение…" : protocolDisplay(server.protocol)}
         </span>
       </div>
-      {/* Пинг-пилл: цвет по КАЧЕСТВУ (pingColor). */}
-      <StatusPill text={pingText} color={pingColor(ping === undefined ? null : ping)} />
+      {/* Во время переключения — спиннер, иначе пинг-пилл (цвет по КАЧЕСТВУ). */}
+      {switching ? (
+        <div title="Переключение…" style={{
+          width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
+          border: `2px solid ${C.accentBlue}40`, borderTopColor: C.accentBlue,
+          animation: "ic-spin 0.8s linear infinite",
+        }} />
+      ) : (
+        <StatusPill text={pingText} color={pingColor(ping === undefined ? null : ping)} />
+      )}
     </div>
   );
 }
@@ -312,6 +332,15 @@ function ServerFlag({ remark }: { remark: string }) {
   return <EmojiBadge emoji="🌐" size={38} />;
 }
 
+/** Маленький инлайн-флаг для строки «Сервер: …» (без круглого бейджа). */
+function ServerFlagInline({ remark }: { remark: string }) {
+  const cc = countryCodeFromRemark(remark);
+  if (cc && hasFlag(cc)) {
+    return <Flag code={cc} size={16} />;
+  }
+  return <span>🌐</span>;
+}
+
 function Stat({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
     <div style={{ flex: 1, background: C.surface, border: `1px solid ${C.stroke}`, borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 2 }}>
@@ -327,8 +356,17 @@ function Stat({ label, value, sub }: { label: string; value: string; sub: string
 function statusLabel(s: string): string {
   return s === "connected" ? "Подключено" : s === "connecting" ? "Подключение…" : s === "error" ? "Ошибка" : "Отключено";
 }
-/** Индекс сервера с минимальным валидным пингом в подписке (для бейджа). */
+/** Индекс сервера с минимальным валидным пингом в подписке (для бейджа).
+ *  Возвращает -1 (метки нет), пока НЕ измерены ВСЕ серверы ключа — иначе бейдж
+ *  «Быстрейший» скачет по мере поступления результатов. Показываем только по
+ *  завершении замеров всех серверов. */
 function fastestIndex(keyId: number, servers: SubscriptionServer[], pings: Record<string, number>): number {
+  if (servers.length === 0) return -1;
+  // Ждём, пока каждый сервер получит результат (не undefined). -1/0 (недоступен) —
+  // это тоже завершённый замер, а вот undefined = ещё меряется.
+  const allMeasured = servers.every((srv) => pings[pingKey(keyId, srv.index)] !== undefined);
+  if (!allMeasured) return -1;
+
   let best = -1;
   let bestMs = Infinity;
   for (const srv of servers) {

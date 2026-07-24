@@ -23,6 +23,10 @@ pub const TUN_NAME: &str = "InfinityTun";
 pub const TUN_ADDRESS: &str = "10.10.0.1/30";
 /// Локальный socks-порт, на котором слушает xray-прокси. НЕ 10808 — его занимает Happ.
 pub const PROXY_SOCKS_PORT: u16 = 11080;
+/// Порт Clash-API sing-box: отсюда читаем статистику трафика (uploadTotal/
+/// downloadTotal). sing-box (TUN) видит ВЕСЬ трафик → единый счётчик для любого
+/// ядра-прокси (и xray, и hysteria — у hysteria v2.10 свой trafficStats не работает).
+pub const CLASH_API_PORT: u16 = 19090;
 
 /// Имена ядер, которые НЕЛЬЗЯ заворачивать в прокси (иначе петля).
 const CORE_PROCESS_NAMES: &[&str] = &["xray.exe", "sing-box.exe", "hysteria.exe"];
@@ -68,7 +72,12 @@ pub fn build(mtu: u32, routing: &RoutingSettings) -> String {
             },
             {"type": "direct", "tag": "direct"}
         ],
-        "route": build_route(routing)
+        "route": build_route(routing),
+        // Clash-API только для чтения статистики трафика (счётчик Скачано/Отправлено).
+        // Слушает локально; вся статистика идёт через TUN → корректна для любого ядра.
+        "experimental": {
+            "clash_api": {"external_controller": format!("127.0.0.1:{CLASH_API_PORT}")}
+        }
     })
     .to_string()
 }
